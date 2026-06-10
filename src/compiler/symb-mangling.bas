@@ -43,7 +43,7 @@ declare sub hMangleNamespace _
 		byval dohashing as integer, _
 		byval isconst as integer _
 	)
-
+		declare function parserIsGlobalAsmKeyword( byval id as const zstring ptr ) as integer
 '' inside a namespace or class?
 #define hIsNested(s) (symbGetNamespace( s ) <> @symbGetGlobalNamespc( ))
 
@@ -840,9 +840,12 @@ private sub hMangleVariable( byval sym as FBSYMBOL ptr )
 			if( symbGetMangling( sym ) = FB_MANGLING_BASIC ) then
 				id = *sym->id.name
 				'' !!! TODO !!! - if backend is gas, then can't mix gcc and gas globals
+
 				select case env.clopt.backend
 				case FB_BACKEND_GCC, FB_BACKEND_CLANG, FB_BACKEND_GAS64
-					id += "$"
+					if( ( symbGetAttrib( sym ) and FB_SYMBATTRIB_ASMWARN ) = 0 ) then
+						id += "$"
+					end if
 				end select
 			'' else, the case-sensitive name saved in the alias..
 			else
@@ -1384,6 +1387,13 @@ private sub hMangleProc( byval sym as FBSYMBOL ptr )
 			else
 				mangled += "__get__"
 			end if
+		else
+			if( ( symbGetAttrib( sym ) and FB_SYMBATTRIB_ASMWARN ) = 0 )then
+				if( parserIsGlobalAsmKeyword( lcase(*id) ) ) then
+					'' to allow reserved asm keywords as procedure name, except for alias/export
+					mangled += "$"
+				end if
+			End If
 		end if
 	end if
 

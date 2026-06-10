@@ -1630,7 +1630,7 @@ function cProcHeader _
 		'''''if( fbGetOption( FB_COMPOPT_EXPORT ) = FALSE ) then
 		'''''   errReportWarn( FB_WARNINGMSG_CANNOTEXPORT )
 		'''''end if
-		attrib or= FB_SYMBATTRIB_EXPORT or FB_SYMBATTRIB_PUBLIC
+		attrib or= FB_SYMBATTRIB_EXPORT or FB_SYMBATTRIB_PUBLIC or FB_SYMBATTRIB_ASMWARN
 	end if
 
 	select case( tk )
@@ -1753,14 +1753,14 @@ function cProcHeader _
 	end if
 
 	if( proc ) then
-		var is_global = (symbGetAttrib( proc ) and _
-			(FB_SYMBATTRIB_COMMON or FB_SYMBATTRIB_PUBLIC or _
-			FB_SYMBATTRIB_EXTERN or FB_SYMBATTRIB_SHARED)) <> 0
-
-		'' only warn if the symbol is global and in the global namespace
-		if( is_global ) then
+		'' only warn if the symbol is export (FB_SYMBATTRIB_ASMWARN is set) and in the global namespace
+		if( ( symbGetAttrib( proc ) and FB_SYMBATTRIB_ASMWARN ) or ( palias <> 0 ) ) then
 			if( (len(id) > 0) and (symbGetNamespace( proc ) = @symbGetGlobalNamespc( )) ) then
-				if( parserIsGlobalAsmKeyword( @id ) ) then
+				if palias <> 0 then
+					if( parserIsGlobalAsmKeyword( palias ) ) then
+						errReportWarnEx( FB_WARNINGMSG_RESERVEDGLOBALSYMBOL, palias , lexLineNum( ) )
+					End If
+				elseif( parserIsGlobalAsmKeyword( @id ) ) then
 					errReportWarnEx( FB_WARNINGMSG_RESERVEDGLOBALSYMBOL, @id , lexLineNum( ) )
 				end if
 			end if

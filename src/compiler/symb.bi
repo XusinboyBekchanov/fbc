@@ -191,6 +191,7 @@ enum FB_SYMBATTRIB
 	FB_SYMBATTRIB_VIS_PROTECTED    = &h00400000  '' UDT members only
 	FB_SYMBATTRIB_INTERNAL         = &h00800000  '' default UDT members / vtable / rtti - affects name mangling
 	FB_SYMBATTRIB_ANONYMOUS        = &h01000000  '' anonymous / unnamed id
+	FB_SYMBATTRIB_ASMWARN          = &h02000000  '' warning asm name / no $ suffixe
 end enum
 
 '' proc symbol attributes mask

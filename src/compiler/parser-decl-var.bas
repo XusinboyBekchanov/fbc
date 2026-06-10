@@ -186,6 +186,7 @@ function cVariableDecl( byval attrib as FB_SYMBATTRIB ) as integer
 		end if
 
 		attrib or= FB_SYMBATTRIB_EXTERN
+		attrib or= FB_SYMBATTRIB_ASMWARN
 		attrib or= FB_SYMBATTRIB_SHARED or FB_SYMBATTRIB_STATIC
 
 		'' can't use EXTERN inside a proc
@@ -531,16 +532,11 @@ private function hAddVar _
 
 		sym = symbAddVar( id, idalias, dtype, subtype, lgt, dimensions, dTB(), attrib, _
 		                  iif( fbLangOptIsSet( FB_LANG_OPT_SCOPE ), 0, FB_SYMBOPT_UNSCOPE ) )
-
 		if( sym ) then
-			var is_global = (symbGetAttrib( sym ) and _
-			                (FB_SYMBATTRIB_COMMON or FB_SYMBATTRIB_PUBLIC or _
-			                FB_SYMBATTRIB_EXTERN or FB_SYMBATTRIB_SHARED )) <> 0
-
-			'' only warn if the symbol is global and in the global namespace
-			if( is_global ) then
+			''only warn if the symbol is extern (ASMWARN is set) and in the global namespace
+			if(  symbGetAttrib( sym ) and FB_SYMBATTRIB_ASMWARN ) then
 				if( (id <> NULL) and (symbGetNamespace( sym ) = @symbGetGlobalNamespc( )) ) then
-					if( parserIsGlobalAsmKeyword( lcase(*id) ) ) then
+					if( parserIsGlobalAsmKeyword( *id ) ) then
 						errReportWarnEx( FB_WARNINGMSG_RESERVEDGLOBALSYMBOL, id , lexLineNum( ) )
 					end if
 				end if
