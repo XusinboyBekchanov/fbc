@@ -471,7 +471,7 @@ end type
 			{ _
 				( FB_DEFTOK_TYPE_TEX, @"(__cuint(" ), _
 				( FB_DEFTOK_TYPE_PARAM, cast( any ptr, 0 ) ), _
-				( FB_DEFTOK_TYPE_TEX, @") and &h0000FFFF)" ), _
+				( FB_DEFTOK_TYPE_TEX, @") and &h0000FFFFL)" ), _
 				( -1 ) _
 			} _
 		), _
@@ -513,7 +513,7 @@ end type
 			{ _
 				( FB_DEFTOK_TYPE_TEX, @"((__cuint(" ), _
 				( FB_DEFTOK_TYPE_PARAM, cast( any ptr, 0 ) ), _
-				( FB_DEFTOK_TYPE_TEX, @") and &h0000FF00) __shr 8)" ), _
+				( FB_DEFTOK_TYPE_TEX, @") and &h0000FF00L) __shr 8)" ), _
 				( -1 ) _
 			} _
 		), _
