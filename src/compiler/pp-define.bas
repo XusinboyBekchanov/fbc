@@ -235,16 +235,8 @@ private function hLoadMacro _
 					end if
 				else
 					do
-						lexSkipToken( LEX_FLAGS or LEXCHECK_NOMULTILINECOMMENT )
-
-						select case lexGetToken( LEX_FLAGS )
-						case FB_TK_EOL, FB_TK_EOF
-							exit do
-						end select
-					loop
-
-					lexSkipToken( LEX_FLAGS or LEXCHECK_NOMULTILINECOMMENT )
-
+						lexNextToken( @t, LEX_FLAGS or LEXCHECK_NOMULTILINECOMMENT )
+					loop until( (t.id = FB_TK_EOL) or (t.id = FB_TK_EOF) )
 					readdchar = iif(t.id = FB_TK_EOF, 0, CHAR_LF)
 					if( prntcnt > 0 ) then
 						prntcnt -= 1
@@ -704,15 +696,8 @@ private function hLoadMacroW _
 					end if
 				else
 					do
-						lexSkipToken( LEX_FLAGS or LEXCHECK_NOMULTILINECOMMENT )
-
-						select case lexGetToken( LEX_FLAGS )
-						case FB_TK_EOL, FB_TK_EOF
-							exit do
-						end select
-					loop
-
-					lexSkipToken( LEX_FLAGS or LEXCHECK_NOMULTILINECOMMENT)
+						lexNextToken( @t, LEX_FLAGS or LEXCHECK_NOMULTILINECOMMENT )
+					loop until( (t.id = FB_TK_EOL) or (t.id = FB_TK_EOF) )
 
 					readdchar = iif(t.id = FB_TK_EOF, 0, CHAR_LF)
 					if( prntcnt > 0 ) then
