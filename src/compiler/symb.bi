@@ -150,7 +150,7 @@ enum FB_SYMBSTATS
 	FB_SYMBSTATS_CANTUNDEF    = &h00800000
 	FB_SYMBSTATS_UNIONFIELD   = &h01000000  '' fields only
 	FB_SYMBSTATS_TEMPORARY    = &h01000000  '' variables: String and Wstring - a pointer that needs deallocating at scope breaks/end
-	''                      ''= &h02000000  '' not-used
+	FB_SYMBSTATS_PARAMANY     = &h02000000  '' param declared as any
 	FB_SYMBSTATS_EMITTED      = &h04000000  '' needed by high-level IRs, to avoid emitting structs etc twice
 	FB_SYMBSTATS_BEINGEMITTED = &h08000000  '' ditto, for circular dependencies with structs
 	FB_SYMBSTATS_UNUSEDVTABLE = &h10000000

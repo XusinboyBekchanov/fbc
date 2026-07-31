@@ -822,11 +822,15 @@ private function hCheckParam _
 	select case symbGetParamMode( param )
 	'' by descriptor?
 	case FB_PARAMMODE_BYDESC
+		if (param->stats and FB_SYMBSTATS_PARAMANY) then
+			param->typ = FB_DATATYPE_VOID
+		end if
 		if( hCheckByDescParam( parent, param, n ) = FALSE ) then
 			errReport( FB_ERRMSG_PARAMTYPEMISMATCHAT )
 			exit function
 		end if
 
+		if ( param->stats and FB_SYMBSTATS_PARAMANY ) then param->typ = param_dtype
 		return TRUE
 
 	'' vararg?
@@ -835,7 +839,7 @@ private function hCheckParam _
 
 	case FB_PARAMMODE_BYREF
 		'' as any?
-		if( param_dtype = FB_DATATYPE_VOID ) then
+		if( (param_dtype = FB_DATATYPE_VOID ) or ( param->stats and FB_SYMBSTATS_PARAMANY) ) then
 			hCheckVoidParam( parent, param, n )
 			return TRUE
 		end if

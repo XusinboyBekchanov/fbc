@@ -491,6 +491,10 @@ private function hParamDecl _
 				hParamWarning( proc, id, FB_WARNINGMSG_PARAMSIZETOOBIG, 0 )
 			end if
 		end if
+	else
+		if dtype=FB_DATATYPE_VOID then ''proto + any
+			param->stats or=FB_SYMBSTATS_PARAMANY
+		end if
 	end if
 
 	'' ('=' (expr | ANY))?
