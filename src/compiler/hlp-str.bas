@@ -679,7 +679,7 @@ function hReEscape _
 					src += 1
 				next
 
-				textlen += 2
+				textlen += 1
 
 				continue do
 
@@ -726,7 +726,7 @@ function hReEscape _
 					dst[7] = hHexChar( value )
 					dst += 8
 
-					textlen += 4
+					textlen += 1
 
 				else
 
@@ -741,7 +741,7 @@ function hReEscape _
 					dst[3] = hHexChar( value )
 					dst += 4
 
-					textlen += 2
+					textlen += 1
 
 				end if
 
@@ -960,7 +960,7 @@ function hReEscapeW _
 					src += 1
 				next
 
-				textlen += 2
+				textlen += 1
 
 				continue do
 
@@ -1006,7 +1006,7 @@ function hReEscapeW _
 					dst[7] = hHexChar( value )
 					dst += 8
 
-					textlen += 4
+					textlen += 1
 
 				else
 
@@ -1021,7 +1021,7 @@ function hReEscapeW _
 					dst[3] = hHexChar( value )
 					dst += 4
 
-					textlen += 2
+					textlen += 1
 
 				end if
 
