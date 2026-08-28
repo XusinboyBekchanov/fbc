@@ -472,6 +472,7 @@ dim shared as integer pushnbstr
 dim shared as longint pushsize ''counts the *padded* bytes the pending pushes will move RSP by
 dim shared as longint pushpad ''the extra 16-byte realignment.
 
+dim shared as string  asm_section_current
 
 ''  Return the KREG_* index of a 64-bit register NAME, or KNOTFOUND.
 ''  Used instead of tests like  op2[0] <> asc("r")  ,which also accepts any
@@ -2541,7 +2542,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 		else
 			asm_code("mov "+regdst+", "+dst) ''always mov ???
 		end if
-		reghandle(rdst)=KREGFREE ''can be reset here as limited use
+		''reghandle(rdst)=KREGFREE ''can be reset here as limited use but moved below
 	end if
 
 	if nbbytes<>1 and nbbytes<>2 and nbbytes<>4 and nbbytes<>8 then
@@ -2564,24 +2565,24 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 			reg_allowed(false)
 			if ctx.systemv then
 				''if rdi, rsi or rdx are used moved to another register
-				if reghandle(KREG_RDI)<>KREGFREE and reghandle(KREG_RDI)<>KREGLOCK then
+				if reghandle(KREG_RDI)<>KREGLOCK then
 					vreg=reghandle(KREG_RDI)
 					tempreg=reg_findfree(vreg)
-					reghandle(KREG_RDI)=KREGFREE
+					reghandle(KREG_RDI)=KREGLOCK
 					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDI))
 				end if
 
-				if reghandle(KREG_RSI)<>KREGFREE and reghandle(KREG_RSI)<>KREGLOCK then
+				if reghandle(KREG_RSI)<>KREGLOCK then
 					vreg=reghandle(KREG_RSI)
 					tempreg=reg_findfree(vreg)
-					reghandle(KREG_RSI)=KREGFREE
+					reghandle(KREG_RSI)=KREGLOCK
 					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RSI))
 				end if
 
-				if reghandle(KREG_RDX)<>KREGFREE and reghandle(KREG_RDX)<>KREGLOCK then
+				if reghandle(KREG_RDX)<>KREGLOCK then
 					vreg=reghandle(KREG_RDX)
 					tempreg=reg_findfree(vreg)
-					reghandle(KREG_RDX)=KREGFREE
+					reghandle(KREG_RDX)=KREGLOCK
 					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDX))
 				end if
 
@@ -2590,35 +2591,36 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 				asm_code("mov rdx, "+Str(nbbytes),KNOALL)
 			else
 				''if rcx, rdx or r8 are used moved to another register
-				if reghandle(KREG_RCX)<>KREGFREE and reghandle(KREG_RCX)<>KREGLOCK then
+				if reghandle(KREG_RCX)<>KREGLOCK then
 					vreg=reghandle(KREG_RCX)
 					tempreg=reg_findfree(vreg)
-					reghandle(KREG_RCX)=KREGFREE
+					reghandle(KREG_RCX)=KREGLOCK
 					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RCX))
 				end if
 
-				if reghandle(KREG_RDX)<>KREGFREE and reghandle(KREG_RDX)<>KREGLOCK then
+				if reghandle(KREG_RDX)<>KREGLOCK then
 					vreg=reghandle(KREG_RDX)
 					tempreg=reg_findfree(vreg)
-					reghandle(KREG_RDX)=KREGFREE
+					reghandle(KREG_RDX)=KREGLOCK
 					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDX))
 				end if
 
-				if reghandle(KREG_R8)<>KREGFREE and reghandle(KREG_R8)<>KREGLOCK then
+				if reghandle(KREG_R8)<>KREGLOCK then
 					vreg=reghandle(KREG_R8)
 					tempreg=reg_findfree(vreg)
-					reghandle(KREG_R8)=KREGFREE
+					reghandle(KREG_R8)=KREGLOCK
 					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_R8))
 				end if
 
 				asm_code("mov rcx, "+regdst)
 				asm_code("mov rdx, "+Str(fillchar),KNOALL)
 				asm_code("mov r8, "+Str(nbbytes),KNOALL)
-
 			end if
+
 			asm_code("call memset")
 
 			reg_allowed(true)
+			if regdst<>dst then reghandle(rdst)=KREGFREE :asm_info("hidden freeing register="+*regstrq(rdst))
 			exit sub
 
 		else
@@ -2662,6 +2664,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 		 ''clear 1 byte
 		asm_code("mov BYTE PTR ["+regdst+"], "+Str(fillchar))
 	end if
+	if regdst<>dst then reghandle(rdst)=KREGFREE :asm_info("hidden freeing register="+*regstrq(rdst))
 end sub
 ''=============================================
 '' MEMCOPY size should be known at compile time
@@ -3657,7 +3660,7 @@ private sub _procallocarg( byval proc as FBSYMBOL ptr, byval sym as FBSYMBOL ptr
 
 		if typeisptr(dtype)=false and symbisvaliststructarray( dtype,subtype)then
 			asm_info("Canceling byval and forcing byref for CVA_GCC")
-			sym->attrib xor = FB_SYMBATTRIB_PARAMVARBYVAL
+			sym->attrib = sym->attrib and (not FB_SYMBATTRIB_PARAMVARBYVAL)
 			sym->attrib or  = FB_SYMBATTRIB_PARAMVARBYREF
 			'sym->typ or = 32 ''pointer
 		end if
@@ -4891,6 +4894,7 @@ private sub hloadoperandsandwritebop(byval op as integer,byval v1 as IRVREG ptr,
 					asm_code("shr "+op1+", "+op2)
 				end if
 			end if
+			''maybe missing if vr<>0 then restore_vrreg(vr,vrreg)
 
 		case AST_OP_MOD , AST_OP_INTDIV ''instructions use rax and rdx, to be checked carefully
 			if reghandle(KREG_RDX)<>KREGFREE then ''as rdx is used need to transfer its contain to another register
@@ -5527,8 +5531,9 @@ private sub _emitconvert( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 		exit sub
 	end if
 
-	reg_findfree(v1->reg)
-	regresult=reg_findreal(v1->reg)
+	''reg_findfree(v1->reg)
+	''regresult=reg_findreal(v1->reg)
+	regresult=reg_findfree(v1->reg)
 
 	if v1dtype=FB_DATATYPE_STRING then v1dtype=FB_DATATYPE_LONGINT
 	select case v1dtype
@@ -6629,7 +6634,8 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 	dim as IRVREG ptr tempo1
 	dim as FB_STRUCT_INREG retin2regs
 
-	''if hdocall ever becomes reentrant these three globals must be saved/restored around the recursive call.	
+	asm_section_current=""
+	''if hdocall ever becomes reentrant these three globals must be saved/restored around the recursive call.
 	pushnbstr=0
 	pushsize=0
 	pushpad=0
@@ -6848,6 +6854,9 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 					'asm_info("datatype="+str(typeGetDtOnly( v2->dtype ))+" "+str(FB_DATATYPE_FUNCTION))
 					'asm_info("DLL="+str(fbGetOption( FB_COMPOPT_OUTTYPE ))+" "+str(FB_OUTTYPE_DYNAMICLIB))
 
+					''maybe necessary ? if v2->typ=IR_VREGTYPE_REG then
+						''asm_code("mov "+*regstrq(listreg(cptint))+", "+op1)
+						''else
 					asm_code("lea "+*regstrq(listreg(cptint))+", "+op1)
 
 					''byval structure passed by pointer
@@ -6901,8 +6910,7 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 								''byval structure passed by pointer copy on stack
 								asm_info("copying byval parameter on stack")
 								asm_info("stk="+Str(ctx.stkcopy))
-								ctx.stkcopy=(v2->subtype->lgt+ctx.stkcopy+v2->subtype->lgt-1) And (Not(v2->subtype->lgt-1))
-								ctx.stkcopy+=8-(ctx.stkcopy mod 8)
+								ctx.stkcopy = (ctx.stkcopy + v2->subtype->lgt + 7) and (not 7)
 								asm_info("stk10="+Str(ctx.stkcopy))
 								memcopy(v2->subtype->lgt,op1,str(-ctx.stkcopy)+"[rbp]",KUSE_MOV,KUSE_LEA)
 								asm_code("lea rax, "+Str(-ctx.stkcopy)+"[rbp]")
@@ -6965,6 +6973,8 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 					if variadic=true and ctx.target=FB_COMPTARGET_WIN32 then
 						''move also directly on stack only for win32
 						asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], rax",KNOOPTIM)
+						''also in General purpose register
+						asm_code("movq "+*regstrq(listreg(cptint))+", xmm"+Str(cptfloat-1))
 					end if
 				else
 					''whole number
@@ -7455,13 +7465,14 @@ private sub _emitjmptb _
 		asm_section(".data")
 		asm_code(".align 8")
 		asm_code(lname+":")
+		dim as string defline = ".quad "+*symbGetMangledName(deflabel)
 		for isel as integer = 0 to span
 			''asm_info("values="+str(isel)+" "+str(idx)+" "+str(values[idx]))
-			if isel=values[idx] then
+			if idx < labelcount andalso isel=values[idx] then
 				asm_code(".quad "+*symbGetMangledName( labels[idx]))
 				idx+=1
 			else
-				asm_code(".quad "+*symbGetMangledName(deflabel))
+				asm_code(defline)
 			end if
 		next
 		asm_section(".text")
@@ -7508,24 +7519,24 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 
 				if ctx.systemv then
 					''if rdi, rsi or rdx are used moved to another register
-					if reghandle(KREG_RDI)<>KREGFREE and reghandle(KREG_RDI)<>KREGLOCK then
+					if reghandle(KREG_RDI)<>KREGLOCK then
 						vreg=reghandle(KREG_RDI)
 						tempreg=reg_findfree(vreg)
-						reghandle(KREG_RDI)=KREGFREE
+						reghandle(KREG_RDI)=KREGLOCK
 						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDI))
 					end if
 
-					if reghandle(KREG_RSI)<>KREGFREE and reghandle(KREG_RSI)<>KREGLOCK then
+					if reghandle(KREG_RSI)<>KREGLOCK then
 						vreg=reghandle(KREG_RSI)
 						tempreg=reg_findfree(vreg)
-						reghandle(KREG_RSI)=KREGFREE
+						reghandle(KREG_RSI)=KREGLOCK
 						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RSI))
 					end if
 
-					if reghandle(KREG_RDX)<>KREGFREE and reghandle(KREG_RDX)<>KREGLOCK then
+					if reghandle(KREG_RDX)<>KREGLOCK then
 						vreg=reghandle(KREG_RDX)
 						tempreg=reg_findfree(vreg)
-						reghandle(KREG_RDX)=KREGFREE
+						reghandle(KREG_RDX)=KREGLOCK
 						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDX))
 					end if
 
@@ -7553,21 +7564,21 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 					if reghandle(KREG_RCX)<>KREGLOCK then ''as rcx is used need to transfer its contain to another register
 						vreg=reghandle(KREG_RCX)
 						tempreg=reg_findfree(vreg)
-						reghandle(KREG_RCX)=KREGFREE
+						reghandle(KREG_RCX)=KREGLOCK
 						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RCX))
 					end if
 
 					if reghandle(KREG_RDX)<>KREGLOCK then
 						vreg=reghandle(KREG_RDX)
 						tempreg=reg_findfree(vreg)
-						reghandle(KREG_RDX)=KREGFREE
+						reghandle(KREG_RDX)=KREGLOCK
 						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDX))
 					end if
 
 					if reghandle(KREG_R8)<>KREGLOCK then
 						vreg=reghandle(KREG_R8)
 						tempreg=reg_findfree(vreg)
-						reghandle(KREG_R8)=KREGFREE
+						reghandle(KREG_R8)=KREGLOCK
 						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_R8))
 					end if
 
