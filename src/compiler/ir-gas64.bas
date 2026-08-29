@@ -179,7 +179,7 @@ declare sub cfi_windows_asm_code(byval statement as string)
 #define KREGUPPER 15 ''registers 0 to 15 / 16=rip /17=dummy reg to avoid crash
 #define KNOTFOUND -1
 #define KSIZEPROCTXT 4000000 ''initial size of proc_txt used for speed up text adding
-
+#define KGOSUBSTK 88 ''GOSUB frame: 8 parameters max,rounded so the frame stays 16-byte aligned
 '' used by ASM64_REGROOM.status (TODO: use a named enum for readability???)
 #define KROOMFREE -1
 #define KROOMMARKED -2
@@ -966,7 +966,7 @@ private sub check_optim(byref code as string)
 					#ifdef __GAS64_DEBUG__
 						code="#20"+code+newline+"   "+"xor "+part1+", "+part1+" #20"
 					#else
-						code="xor "+part1+", "+part1+" #20"
+						code="xor "+part1+", "+part1
 					#endif
 				else
 					#ifdef __GAS64_DEBUG__
@@ -1508,12 +1508,10 @@ private sub reg_freeable(byref lineasm as string)
 end sub
 ''============== end of optim ====================================================
 private function pw2(byval num as integer)as integer ''return the first power of 2 greater than a number ex 24 -->32
-	dim as double a=log(num)/log(2)
-	if frac(a)=0 then
-		return 2^a
-	else
-		return 2^(int(a)+1)
-	end if
+	if num<=1 then return 1
+	dim as ulongint v=num-1
+	v or= v shr 1 : v or= v shr 2 : v or= v shr 4 : v or= v shr 8 : v or= v shr 16 : v or= v shr 32
+	return v+1
 end function
 
 private sub asm_section(byref section as string)
@@ -2985,7 +2983,7 @@ private sub hemitvariable( byval sym as FBSYMBOL ptr )
 		'' Globals without initializer are zeroed in FB
 		ctx.section = SECTION_FOOT
 		asm_section(".bss")
-		dim as integer size,align,nbelements
+		dim as integer align2,nbelements
 
 		nbelements=1
 		for i as integer = symbGetArrayDimensions( sym ) - 1 to 0 step -1
@@ -2994,26 +2992,26 @@ private sub hemitvariable( byval sym as FBSYMBOL ptr )
 		length=sym->lgt*nbelements
 		 ''todo use symbisarray
 		if (symbgettype(sym) = FB_DATATYPE_STRUCT) then
-			align=sym->subtype->udt.natalign
+			align2=sym->subtype->udt.natalign
 			asm_info(*symbGetMangledName(sym))
 		else
-			align=sym->lgt
+			align2=sym->lgt
 		end if
-		asm_info("var total size="+Str(length)+"align="+str(align))
-		align=pw2(align) ''must be a power of 2
-		if align>8 then align=8
+		align2=pw2(align2) ''must be a power of 2
+		if align2>8 then align2=8
 		'if symbIsPublic( sym ) then
 		'    asm_info("Not for variable report please : .globl "+*symbGetMangledName( sym ))
 		'end if
+		asm_info("var total size="+Str(length)+" align="+str(align2))
 		if (symbIsCommon(sym)) or ( symbIsPublic( sym ) ) then
-			asm_code(".comm "+*symbGetMangledName( sym )+","+Str(length)+","+Str(align))
+			asm_code(".comm "+*symbGetMangledName( sym )+","+Str(length)+","+Str(align2))
 		else
 			if ctx.systemv then
 				''lcomm without aligment in linux
 				asm_code(".local "+*symbGetMangledName( sym ))
-				asm_code(".comm "+*symbGetMangledName( sym )+","+Str(length)+","+Str(align))
+				asm_code(".comm "+*symbGetMangledName( sym )+","+Str(length)+","+Str(align2))
 			else
-				asm_code(".lcomm "+*symbGetMangledName( sym )+","+Str(length)+","+Str(align))
+				asm_code(".lcomm "+*symbGetMangledName( sym )+","+Str(length)+","+Str(align2))
 			end if
 		end if
 		asm_info(">>"+typedumpToStr(symbGetType( sym ),sym->subtype) )
@@ -3954,7 +3952,7 @@ private sub _emitlabel( byval label as FBSYMBOL ptr )
 	end if
 
 	if label->lbl.gosub then
-		asm_code("sub rsp, 88 #stack for gosub") ''8 parameters max and need to be 16byte aligned
+		asm_code("sub rsp, "+Str(KGOSUBSTK)+" #stack for gosub") ''8 parameters max and need to be 16byte aligned
 	end if
 end sub
 private sub prepare_idx(byval v1 as IRVREG ptr, byref op1 as string, byref op3 as string)
@@ -4410,7 +4408,7 @@ private sub bop_float( _
 
 end sub
 ''multiplication optimized
-sub optim_mult(byref op1 as string,byref op2 as string)
+private sub optim_mult(byref op1 as string,byref op2 as string)
 	''0,1,2,4,8,16, etc are already optimized by storing 0, doing nothing or using shl
 	select case op2
 		Case "-1"
@@ -6196,7 +6194,7 @@ private sub _emitstore( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 			op2=*symbGetMangledName(v2->sym)+"[rip+"+str(v2->ofs)+"]" ''used with lea
 
 		case IR_VREGTYPE_IMM
-			if v1->dtype=FB_DATATYPE_BOOLEAN and v2->value.i<>0 then
+			if typeGetDtAndPtrOnly(v1->dtype)=FB_DATATYPE_BOOLEAN and v2->value.i<>0 then
 				v2->value.i=1
 			end if
 			if typeGetClass( v2->dtype ) = FB_DATACLASS_FPOINT then
@@ -7415,8 +7413,8 @@ private sub _emitbranch( byval op as integer, byval label as FBSYMBOL ptr )
 	end if
 end sub
 private sub _emitreturn( byval bytestopop as integer )
-	asm_info("return for gosub="+str(bytestopop))
-	asm_code("add rsp, 88 # restore stack for gosub",KNOFREE)
+	asm_info("return for gosub="+str(bytestopop)) ''bytestopop is deliberately unused on x86-64
+	asm_code("add rsp, "+Str(KGOSUBSTK)+" # restore stack for gosub",KNOFREE)
 	asm_code("ret",KNOALL)
 end sub
 private sub _emitjmptb _
@@ -7785,7 +7783,7 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 end sub
 private sub _emitcomment( byval text as zstring ptr )
 	#ifdef basicdata
-		if text=0 Or LTrim(*text)="" Or left(ltrim(*text, Any Chr(32)+Chr(9)),1)="'" then exit sub
+		if text=0 Orelse LTrim(*text)="" Orelse left(ltrim(*text, Any Chr(32)+Chr(9)),1)="'" then exit sub
 
 		hWriteasm64 ( "# -----------------------------------------")
 		hWriteasm64 ( "# basic --> " + Trim(*text, Any " "+Chr(9)) )
@@ -7885,7 +7883,7 @@ private sub _emitvarinii( byval sym as FBSYMBOL ptr, byval value as longint )
 		case else
 			asm_info("siz=unknown"+" dtype="+Str(dtype)+" size="+Str(typeGetSize( dtype ))+ "--> default siz=quad 8")
 			siz=".quad"
-			lgt=8
+			lgt=16
 	end select
 	asm_code(siz+" 0x" + right(hex( value ),lgt)+" # "+Str(value))
 
@@ -7972,7 +7970,6 @@ private sub _emitprocend _
 	byval initlabel as FBSYMBOL ptr, _
 	byval exitlabel as FBSYMBOL ptr _
 	)
-	dim as integer idx
 	dim as string restreg,lname
 	asm_info("stk="+Str(ctx.stk))
 	if ctx.stkmax>ctx.stk then ctx.stk=ctx.stkmax
@@ -8088,7 +8085,7 @@ private sub _emitprocend _
 	cfi_windows_asm_code(".seh_endproc")
 
 	if( env.clopt.debuginfo = true ) then
-		dim as string lname = *symbUniqueLabel( )
+		lname = *symbUniqueLabel( )
 		dbg_addstab(,STAB_TYPE_FUN,,lname+"-"+*symbGetMangledName( ctxdbg.proc ))
 		asm_code(lname+":")
 	end if
