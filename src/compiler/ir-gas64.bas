@@ -715,8 +715,8 @@ private sub check_optim(byref code as string)
 		end if
 		exit sub
 	else
-		select case left(code,4)
-			case "adds","subs","muls","divs"
+		select case *schptrl
+			case cvl("adds"),cvl("subs"),cvl("muls"),cvl("divs")
 				poschar1=instr(code," ")
 				instruc=left(code,poschar1-1)
 				poschar2=instr(code,",")
@@ -815,10 +815,10 @@ private sub check_optim(byref code as string)
 				''to avoid issue if after 64bit register is used with xmm
 				#ifdef __GAS64_DEBUG__
 					writepos=len(ctx.proc_txt)+len(code)+9
-					code="#01"+code+newline+"   "+"and "+part1+" ,0xFFFFFFFF"
+					code="#01"+code+newline+"   "+"and "+part1+", 0xFFFFFFFF"
 				#else
 					writepos=len(ctx.proc_txt)+len(code)+3
-					code="and "+part1+" ,0xFFFFFFFF"
+					code="and "+part1+", 0xFFFFFFFF"
 				#endif
 			else
 				#ifdef __GAS64_DEBUG__ ''otherwise no output code
@@ -3527,7 +3527,7 @@ private function param_analyze(byval dtype as FB_DATATYPE,byval struc as FBSYMBO
 		end if
 	end if
 end function
-private sub reg_fillm(byval ofs as integer,listreg() as integer,byval lgt as integer,byval prev as integer=0,byval offst as integer=0)
+private sub reg_fillm(byval ofs as integer,byval lgt as integer,byval prev as integer=0,byval offst as integer=0)
 	select case as const lgt-offst
 		case 1
 			asm_code("mov "+Str(ofs+offst)+"[rbp], "+*regstrb(listreg(ctx.arginteg-prev)))
@@ -3557,7 +3557,7 @@ private sub reg_fillm(byval ofs as integer,listreg() as integer,byval lgt as int
 			asm_code("mov "+Str(ofs+offst)+"[rbp], "+*regstrq(listreg(ctx.arginteg-prev)))
 	end select
 end sub
-private sub reg_fillr(byval lgt as integer,byref src as string,byval cptint as integer,listreg() as integer,byval reg2 as integer)
+private sub reg_fillr(byval lgt as integer,byref src as string,byval cptint as integer,byval reg2 as integer)
 
 	dim as const zstring ptr regsrc
 	dim as string regdst=*regstrq(listreg(cptint))
@@ -3707,12 +3707,12 @@ private sub _procallocarg( byval proc as FBSYMBOL ptr, byval sym as FBSYMBOL ptr
 					sym->ofs=-ctx.stk
 					select case as const paramtype
 						case KPARAMR1
-							reg_fillm(sym->ofs,listreg(),lgt)
+							reg_fillm(sym->ofs,lgt)
 						case KPARAMRR
-							reg_fillm(sym->ofs,listreg(),8,1)
-							reg_fillm(sym->ofs,listreg(),lgt,0,8)
+							reg_fillm(sym->ofs,8,1)
+							reg_fillm(sym->ofs,lgt,0,8)
 						case KPARAMRX
-						   reg_fillm(sym->ofs,listreg(),8)
+						   reg_fillm(sym->ofs,8)
 							if lgt<13 then
 								asm_code("movd "+Str(sym->ofs+8)+"[rbp], xmm"+str(ctx.argfloat-1))
 							else
@@ -3724,7 +3724,7 @@ private sub _procallocarg( byval proc as FBSYMBOL ptr, byval sym as FBSYMBOL ptr
 							else
 								asm_code("movq "+Str(sym->ofs)+"[rbp], xmm"+str(ctx.argfloat-1))
 							end if
-							reg_fillm(sym->ofs,listreg(),lgt,,8)
+							reg_fillm(sym->ofs,lgt,,8)
 						case KPARAMX1
 							if lgt=4 then
 								asm_code("movd "+Str(sym->ofs)+"[rbp], xmm"+str(ctx.argfloat-1))
@@ -4054,7 +4054,7 @@ private sub prepare_idx(byval v1 as IRVREG ptr, byref op1 as string, byref op3 a
 			if symbIsStatic(v1->vidx->sym) Or symbisshared(v1->vidx->sym) then
 				asm_code("add "+regtempo+", "+*symbGetMangledName(v1->vidx->sym)+"[rip+"+Str(v1->vidx->ofs)+"]")
 			else
-				asm_code("add "+regtempo+","+Str(v1->vidx->ofs)+"[rbp]")
+				asm_code("add "+regtempo+", "+Str(v1->vidx->ofs)+"[rbp]")
 			end if
 			op1="["+regtempo+"]"
 			return
@@ -4408,29 +4408,33 @@ private sub bop_float( _
 
 end sub
 ''multiplication optimized
-private sub optim_mult(byref op1 as string,byref op2 as string)
+private sub optim_mult(byref op1 as string,byref op2 as string,byval valitg as integer,byval imm as integer)
 	''0,1,2,4,8,16, etc are already optimized by storing 0, doing nothing or using shl
-	select case op2
-		Case "-1"
-			asm_code("neg "+op1)
-		Case "-2"
-			asm_code("neg "+op1)
-			asm_code("shl "+op1+", 1")
-		case "3"
-			asm_code("lea "+op1+", ["+op1+"+"+op1+"*2]")
-		case "5"
-			asm_code("lea "+op1+", ["+op1+"+"+op1+"*4]")
-		case "6"
-			asm_code("lea "+op1+", ["+op1+"+"+op1+"*2]")
-			asm_code("add "+op1+", "+op1)
-		case "9"
-			asm_code("lea "+op1+", ["+op1+"+"+op1+"*8]")
-		case "10"
-			asm_code("lea "+op1+", ["+op1+"+"+op1+"*4]")
-			asm_code("add "+op1+", "+op1)
-		case else
-			asm_code("imul "+op1+", "+op2)
-	End Select
+	if imm=IR_VREGTYPE_IMM then
+		select case as const valitg
+			Case -1
+				asm_code("neg "+op1)
+			Case -2
+				asm_code("neg "+op1)
+				asm_code("shl "+op1+", 1")
+			case 3
+				asm_code("lea "+op1+", ["+op1+"+"+op1+"*2]")
+			case 5
+				asm_code("lea "+op1+", ["+op1+"+"+op1+"*4]")
+			case 6
+				asm_code("lea "+op1+", ["+op1+"+"+op1+"*2]")
+				asm_code("add "+op1+", "+op1)
+			case 9
+				asm_code("lea "+op1+", ["+op1+"+"+op1+"*8]")
+			case 10
+				asm_code("lea "+op1+", ["+op1+"+"+op1+"*4]")
+				asm_code("add "+op1+", "+op1)
+			case else
+				asm_code("imul "+op1+", "+op2)
+		End Select
+	else
+		asm_code("imul "+op1+", "+op2)
+	end if
 end sub
 private sub hloadoperandsandwritebop(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVREG ptr,byval vr as IRVREG ptr,byval label as FBSYMBOL ptr =0,byval options as IR_EMITOPT)
 
@@ -4805,8 +4809,7 @@ private sub hloadoperandsandwritebop(byval op as integer,byval v1 as IRVREG ptr,
 			end if
 			if vr<>0 then restore_vrreg(vr,vrreg)
 		case AST_OP_MUL
-			'asm_code("imul "+op1+", "+op2)
-			optim_mult(op1,op2)
+			optim_mult(op1,op2,v2->value.i,v2->typ)
 			if op1prev<>"" then asm_code("mov "+op1prev+", "+op1)
 		case AST_OP_LE,AST_OP_LT,AST_OP_NE,AST_OP_GE,AST_OP_GT,AST_OP_EQ
 			if v1->dtype=FB_DATATYPE_UINT Or v1->dtype=FB_DATATYPE_ULONGINT Or _
@@ -5783,7 +5786,7 @@ private sub _emitconvert( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 				reghandle(reg)=KREGFREE
 
 				asm_code("movabs "+regtempo+", -9223372036854775808")
-				asm_code("xor rax,"+regtempo)
+				asm_code("xor rax, "+regtempo)
 				asm_code(lname2+":")
 				asm_code("mov "+op1+", rax")
 
@@ -5845,7 +5848,7 @@ private sub _emitconvert( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 				reghandle(reg)=KREGFREE
 
 				asm_code("movabs "+regtempo+", -9223372036854775808")
-				asm_code("xor rax,"+regtempo)
+				asm_code("xor rax, "+regtempo)
 				asm_code(lname2+":")
 				asm_code("mov "+op1+", rax")
 
@@ -6423,6 +6426,7 @@ private sub _emitloadres(byval v1 as IRVREG ptr,byval vr as IRVREG Ptr)
 		''assuming in this case fb$result is always defined like xxx[rbp]
 		if v1->typ<>IR_VREGTYPE_VAR orelse ( symbIsStatic(v1->sym) Or symbisshared(v1->sym) )then
 			asm_error("IR_VREGTYPE not handled in emitloadres (linux)")
+			exit sub
 		end if
 		lgt=v1->sym->lgt
 		op2=Str(v1->ofs+8)+"[rbp]"
@@ -6861,8 +6865,7 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 					asm_info("copying byval parameter on stack")
 					asm_info("stk="+Str(ctx.stkcopy))
 					'ctx.stkcopy=(symbGetRealSize( v2->subtype )+ctx.stkcopy+v2->subtype->lgt-1) And (Not(v2->subtype->lgt-1))
-					ctx.stkcopy=(v2->subtype->lgt +ctx.stkcopy+v2->subtype->lgt-1) And (Not(v2->subtype->lgt-1))
-					ctx.stkcopy+=8-(ctx.stkcopy mod 8)
+					ctx.stkcopy = (ctx.stkcopy + v2->subtype->lgt + 7) and (not 7)
 					asm_info("stk12="+Str(ctx.stkcopy))
 					regtempo=*regstrq(listreg(cptint))
 					memcopy(v2->subtype->lgt,regtempo,str(-ctx.stkcopy)+"[rbp]",KUSE_LEA,KUSE_LEA)
@@ -6931,8 +6934,7 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 								 ''byval structure passed by pointer copy on stack
 								asm_info("copying byval parameter on stack")
 								asm_info("stk="+Str(ctx.stkcopy))
-								ctx.stkcopy=(v2->subtype->lgt +ctx.stkcopy+v2->subtype->lgt-1) And (Not(v2->subtype->lgt-1))
-								ctx.stkcopy+=8-(ctx.stkcopy mod 8)
+								ctx.stkcopy = (ctx.stkcopy + v2->subtype->lgt + 7) and (not 7)
 								asm_info("stk11="+Str(ctx.stkcopy))
 								memcopy(v2->subtype->lgt,"rax",Str(-ctx.stkcopy)+"[rbp]",KUSE_MOV,KUSE_LEA)
 								asm_code("lea rax, "+Str(-ctx.stkcopy)+"[rbp]")
@@ -7006,18 +7008,18 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 				if ctx.systemv then
 					select case as const paramtype
 						case KPARAMR1
-							reg_fillr(lgt,op1,cptint,listreg(),reg2)
+							reg_fillr(lgt,op1,cptint,reg2)
 						case KPARAMRR
-							reg_fillr(8,op1,cptint-1,listreg(),reg2)
-							reg_fillr(lgt,op1,cptint,listreg(),reg2)
+							reg_fillr(8,op1,cptint-1,reg2)
+							reg_fillr(lgt,op1,cptint,reg2)
 						case KPARAMRX
-							reg_fillr(8,op1,cptint,listreg(),reg2)
+							reg_fillr(8,op1,cptint,reg2)
 							reg_fillx(lgt,op1,cptfloat)
 						case KPARAMX1
 							reg_fillx(lgt,op1,cptfloat)
 						case KPARAMXR
 							reg_fillx(8,op1,cptfloat)
-							reg_fillr(lgt,op1,cptint,listreg(),reg2)
+							reg_fillr(lgt,op1,cptint,reg2)
 						case KPARAMXX
 							reg_fillx(8,op1,cptfloat-1)
 							reg_fillx(lgt,op1,cptfloat)
@@ -7025,7 +7027,7 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 				else
 					'' WDS
 					if paramtype=KPARAMR1 then
-						reg_fillr(lgt,op1,cptint,listreg(),reg2)
+						reg_fillr(lgt,op1,cptint,reg2)
 					elseif paramtype=KPARAMX1 then
 						reg_fillx(lgt,op1,cptfloat)
 					else
@@ -7170,11 +7172,11 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 			asm_code("sub rsp, "+str(pushpad))
 		end if
 		for istr as integer =pushnbstr to 1 step -1
-			if right(pushstr(istr),3)="#NO" then
-				asm_code(pushstr(istr),KNOOPTIM)
-			else
+			'if right(pushstr(istr),3)="#NO" then  ''no MPUSH'ed string ever ends with "#NO"
+				'asm_code(pushstr(istr),KNOOPTIM)
+			'else
 				asm_code(pushstr(istr))
-			end if
+			'end if
 		next
 	end if
 	''unlock registers to avoid save just below
@@ -7854,7 +7856,7 @@ private sub _emitvarinibegin( byval sym as FBSYMBOL ptr )
 	end if
 end sub
 private sub _emitvarinii( byval sym as FBSYMBOL ptr, byval value as longint )
-	dim as string siz
+	dim as zstring ptr siz
 	dim as integer lgt
 	'var dtype = typeGetDtOnly(symbGetType( sym ))
 	var dtype = symbGetType( sym )
@@ -7869,23 +7871,24 @@ private sub _emitvarinii( byval sym as FBSYMBOL ptr, byval value as longint )
 
 	select case as const typeGetSize( dtype )
 		case 1
-			siz=".byte"
+			siz=@".byte 0x"
 			lgt=2
 		case 2
-			siz=".word"
+			siz=@".word 0x"
 			lgt=4
 		case 4
-			siz=".long"
+			siz=@".long 0x"
 			lgt=8
 		case 8
-			siz=".quad"
+			siz=@".quad 0x"
 			lgt=16
 		case else
 			asm_info("siz=unknown"+" dtype="+Str(dtype)+" size="+Str(typeGetSize( dtype ))+ "--> default siz=quad 8")
-			siz=".quad"
+			siz=@".quad 0x"
 			lgt=16
 	end select
-	asm_code(siz+" 0x" + right(hex( value ),lgt)+" # "+Str(value))
+	asm_info("Decimal value = "+Str(value))
+	asm_code(*siz + right(hex( value ),lgt))
 
 end sub
 private sub _emitvarinif( byval sym as FBSYMBOL ptr, byval value as double )
@@ -7906,7 +7909,8 @@ private sub _emitprocbegin(byval proc as FBSYMBOL ptr,byval initlabel as FBSYMBO
 	ctx.opepass=0
 
 	ctx.variadic=false
-	ctx.proc_txt=""
+	dim as integer ptr textptr=cast(integer ptr,varptr(ctx.proc_txt))+1
+	*textptr=0 ''optimized replacement of ctx.proc_txt=""
 	ctx.section=SECTION_PROLOG
 	ctx.proccalling=false
 	ctxdbg.lnum=-1
@@ -8097,7 +8101,9 @@ private sub _emitprocend _
 
 	irhlEmitProcEnd( ) ''just flistReset( @irhl.vregs )
 
-	ctx.body_txt+=ctx.prolog_txt+ctx.proc_txt+ctx.epilog_txt ''assembling all the parts
+	ctx.body_txt+=ctx.prolog_txt ''assembling all the parts
+	ctx.body_txt+=ctx.proc_txt
+	ctx.body_txt+=ctx.epilog_txt
 	ctx.section=SECTION_HEAD ''to keep information that could be send after as ctx.epilog_txt will be erased
 
 end sub
@@ -8223,7 +8229,7 @@ private sub _emitMacro( byval op as integer,byval v1 as IRVREG ptr, byval v2 as 
 				asm_code("mov DWORD PTR ["+regvalist+"], "+str(ctx.arginteg*8),KNOALL)  ''offset reg size 4
 				asm_code("mov DWORD PTR 4["+regvalist+"], "+str(ctx.argfloat*8+48)) ''offset float 4
 				startarg=(iif(ctx.arginteg<=6,0,ctx.arginteg-6)+iif(ctx.argfloat<=8,0,ctx.argfloat-8))*8+16
-				asm_code("lea rax,"+str(startarg)+"[rbp]")   ''ad stack
+				asm_code("lea rax, "+str(startarg)+"[rbp]")   ''ad stack
 				asm_code("mov QWORD PTR 8["+regvalist+"], rax")
 				asm_code("lea rax, -152[rbp]") ''ad reg see stack organization
 				asm_code("mov QWORD PTR 16["+regvalist+"], rax")
