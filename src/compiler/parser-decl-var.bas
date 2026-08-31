@@ -538,6 +538,9 @@ private function hAddVar _
 				if( (id <> NULL) and (symbGetNamespace( sym ) = @symbGetGlobalNamespc( )) ) then
 					if( parserIsGlobalAsmKeyword( *id ) ) then
 						errReportWarnEx( FB_WARNINGMSG_RESERVEDGLOBALSYMBOL, id , lexLineNum( ) )
+					else
+						''reset attribut otherwise no $ added
+						symbGetAttrib( sym ) xor= FB_SYMBATTRIB_ASMWARN
 					end if
 				end if
 			end if
