@@ -163,6 +163,8 @@ declare sub cfi_windows_asm_code(byval statement as string)
 	hWriteasm64("#")
 #endmacro
 
+#define RIGHT1(s) s[len(s)-1] ''get the first right character faster than right(s,1)
+
 #ifdef __GAS64_DEBUG__
 	#define NEWLINE2 NEWLINE+"   "
 #else
@@ -752,7 +754,7 @@ private sub check_optim(byref code as string)
 	if flag=KUSE_LEA then
 		if instr(part1,"["+prevpart1+"]") then
 			''check register or immediate
-			if part2[0]=asc("r") Or part2[0]=asc("e") or (asc(Right(part2,1))>=48 and asc(right(part2,1))<=57) then
+			if part2[0]=asc("r") Or part2[0]=asc("e") or (RIGHT1(part2)>=48 and RIGHT1(part2)<=57) then
 				''OPTIMIZATION 4 lea
 				newcode=instruc+" "+mid(part1,1,instr(part1,"[")-1)+prevpart2+", "+part2
 				#ifdef __GAS64_DEBUG__
@@ -811,7 +813,7 @@ private sub check_optim(byref code as string)
 
 	if part2=prevpart1 then
 		if part1=prevpart2 then
-			if instr(part2,"[")<>0 and (right(part1,1)="d" or part1[0]=asc("e")) then
+			if instr(part2,"[")<>0 and (RIGHT1(part1)=asc("d") or part1[0]=asc("e")) then
 				''to avoid issue if after 64bit register is used with xmm
 				#ifdef __GAS64_DEBUG__
 					writepos=len(ctx.proc_txt)+len(code)+9
@@ -829,7 +831,7 @@ private sub check_optim(byref code as string)
 			End If
 		else
 			''direct simple register ?
-			if prevpart2[0]=asc("r") and right(part1,1)<>"d" and part1[0]<>asc("e") then
+			if prevpart2[0]=asc("r") and RIGHT1(part1)<>asc("d") and part1[0]<>asc("e") then
 				if instr(prevpart1,"[")<>0 then
 					''OPTIMIZATION 2-1   with [] so keep the line
 					if part1[0]=asc("x") then
@@ -865,7 +867,7 @@ private sub check_optim(byref code as string)
 			elseif prevpart2[0]=asc("x") then
 				if instr(prevpart1,"[")<>0 then
 					''OPTIMIZATION 3-1
-					if part1[0]=asc("e") orelse right(part1,1)="d" then
+					if part1[0]=asc("e") orelse RIGHT1(part1)=asc("d") then
 						instruc="movd"
 					elseif previnstruc="movss" then
 						instruc="movss"
@@ -933,11 +935,11 @@ private sub check_optim(byref code as string)
 					EndIf
 				End If
 
-				if part1[0]=asc("e") or right(part1,1)="d" then
+				if part1[0]=asc("e") or RIGHT1(part1)=asc("d") then
 					''dest 32bit register
-					if prevpart2[0]<>asc("e") and right(prevpart2,1)<>"d" then
+					if prevpart2[0]<>asc("e") and RIGHT1(prevpart2)<>asc("d") then
 						''source 64bit (else keep prevpart2 as it)
-						if right(prevpart2,1)>="a" then
+						if RIGHT1(prevpart2)>=asc("a") then
 							''rax to rdi --> eax to edi
 							prevpart2="e"+right(prevpart2,2)
 						else
