@@ -6149,13 +6149,7 @@ private sub _emitstore( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 
 	if( hIsStructIn2Regs( v2 ) ) then
 		'' for Linux structures can be returned in 2 registers so needs a special handling
-		if v1->typ=IR_VREGTYPE_VAR andalso v1->sym<>0 andalso ( v1->sym->stats and FB_SYMBSTATS_IMPLICIT ) then
-			asm_info("Replacing  "+str(v1->sym->ofs)+" by "+str(v2->ofs))
-			v1->sym->ofs=v2->ofs
-			asm_info("v1="+vregdumpfull(v1))
-		else
-			emitStoreStruct(v2,op1,op3)
-		end if
+		emitStoreStruct(v2,op1,op3)
 		exit sub
 	end if
 
