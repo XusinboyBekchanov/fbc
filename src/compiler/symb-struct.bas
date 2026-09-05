@@ -739,11 +739,19 @@ private function hGetReturnTypeGas64SystemV( byval sym as FBSYMBOL ptr ) as inte
 			case KSTRUCT_R ''only integers in RAX
 				'' don't set retin2regs, it's handled by datatype only
 				'' sym->udt.retin2regs = FB_STRUCT_R
-				return FB_DATATYPE_LONGINT
+				if sym->lgt>4 then
+					return FB_DATATYPE_LONGINT
+				else
+					return FB_DATATYPE_LONG
+				endif
 			case KSTRUCT_X ''only floats in XMM0
 				'' don't set retin2regs, it's handled by datatype only
 				'' sym->udt.retin2regs = FB_STRUCT_X
-				return FB_DATATYPE_DOUBLE
+				if sym->lgt>4 then
+					return FB_DATATYPE_DOUBLE
+				else
+					return FB_DATATYPE_SINGLE
+				endif
 			case KSTRUCT_RR ''only integers in RAX/RDX
 				sym->udt.retin2regs = FB_STRUCT_RR
 				return FB_DATATYPE_STRUCT
