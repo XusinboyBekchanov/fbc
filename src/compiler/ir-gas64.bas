@@ -1009,6 +1009,7 @@ end sub
 #define KADD 5
 #define KCALL 6
 #define KPUSH 7
+#define KJMP 8
 
 '======================================================
 '' using *<long ptr> and *<short ptr> to avoid left() and tempo string in string comparison and so speed up greatly compilation
@@ -1080,6 +1081,7 @@ private sub reg_freeable(byref lineasm as string)
 		instruc=KCALL
 		linstruc=5
 	elseif *schptrl=cvl("jmp ") then
+		instruc=KJMP
 	elseif *schptrl=cvl("push") then
 		instruc=KPUSH
 		linstruc=5
@@ -1095,6 +1097,8 @@ private sub reg_freeable(byref lineasm as string)
 		linstruc=5
 	elseif *schptrl=cvl("divs") then
 		linstruc=5
+	elseif *schptrl=cvl("ucom") then
+		linstruc=8
 	elseif *schptrs=cvshort("cv") then
 		if len(lineasm)<9 then exit sub '' A real cvtXXXX instruction is at least 9 characters long.
 		if schptrb[8]=asc(" ") then
@@ -1483,6 +1487,12 @@ private sub reg_freeable(byref lineasm as string)
 			if regfound12<>-1 then
 				reghandle(regfound12)=KREGFREE ''call reg
 			end if
+		elseif instruc=KJMP then
+			if regfound12<>-1 then
+				reghandle(regfound12)=KREGFREE
+			elseif regfound11<>-1 then
+				reghandle(regfound11)=KREGFREE
+			End If
 		elseif regfound12=regfound22 then
 			if regfound12<>-1 then
 				if instruc<>KADD then 'in multiplication optim ("add "+op1+", "+op1)
