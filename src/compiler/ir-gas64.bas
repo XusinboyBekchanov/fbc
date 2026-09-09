@@ -1627,15 +1627,17 @@ private function hfloattohex_asm64(byval value as double,byval dtype as Integer,
 	dim as single singlevalue = value
 
 	if( typeGet( dtype ) = FB_DATATYPE_DOUBLE ) then
-		rawbytes="0x"+hex( *cptr( ulongint ptr, @value ), 16 )+" # DBL="+str(value)
+		rawbytes="0x"+hex( *cptr( ulongint ptr, @value ), 16 )
 		if full then
+			asm_info("DBL="+str(value))
 			return ".quad " + rawbytes
 		else
 			return rawbytes
 		end if
 	else
-		rawbytes="0x"+Hex( cuint( *cptr( ulong ptr, @singlevalue ) ), 8 )+" # SNG="+str(value)
+		rawbytes="0x"+Hex( cuint( *cptr( ulong ptr, @singlevalue ) ), 8 )
 		if full then
+			asm_info("SNG="+str(value))
 			return ".long " + rawbytes
 		else
 			return rawbytes
@@ -1704,7 +1706,8 @@ private sub dbg_emitstab()
 
 	for istab as integer = 0 to ctxdbg.stabnb
 		stab.full=dbgstab(istab).stab
-		asm_code(".quad 0x"+hex(dbgstab(istab).stab)+" # "+str(stab.cod)+" "+str(stab.desc)+" "+str(stab.offst))
+		asm_info("stabs="+str(stab.cod)+" "+str(stab.desc)+" "+str(stab.offst))
+		asm_code(".quad 0x"+hex(dbgstab(istab).stab))
 		asm_code(".quad "+dbgstab(istab).value)
 	next
 end sub
