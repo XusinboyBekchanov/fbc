@@ -8117,6 +8117,19 @@ private sub _emitprocend _
 	flistReset( @ctx.spillvregs )
 	ctx.vreg_count = 0
 
+	#ifdef __GAS64_DEBUG__
+		''=== probe for checking leak ======
+		scope
+		dim as string leaked
+		for ireg as integer = 0 to KREGUPPER
+			if ireg = KREG_RBP orelse ireg = KREG_RSP then continue for
+			if reghandle(ireg) <> KREGFREE then leaked += " " + *regstrq(ireg) + "=vreg" + str(reghandle(ireg))
+			if regroom(ireg).status <> KROOMFREE then leaked += " " + *regstrq(ireg) + "=ROOM" + str(regroom(ireg).status)
+		next
+		if len(leaked) then print "PROBE " + *symbGetMangledName(proc) + ":" + leaked
+		end scope
+	#endif
+
 	irhlEmitProcEnd( ) ''just flistReset( @irhl.vregs )
 
 	ctx.body_txt+=ctx.prolog_txt ''assembling all the parts
