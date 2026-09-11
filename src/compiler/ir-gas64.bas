@@ -2577,20 +2577,25 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 			''to avoid the use of rcx/rdi,rdx/rsi and r8/rdx like free registers
 			reg_allowed(false)
 			if ctx.systemv then
-				''if rdi, rsi or rdx are used moved to another register
-				if reghandle(KREG_RDI)<>KREGLOCK then
-					vreg=reghandle(KREG_RDI)
-					tempreg=reg_findfree(vreg)
-					reghandle(KREG_RDI)=KREGLOCK
-					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDI))
+				''if rdi, rsi or rdx are used moved to another register (see below rcx case)
+				if regdst<>*regstrq(KREG_RDI)  then
+					if reghandle(KREG_RDI)<>KREGLOCK then
+						vreg=reghandle(KREG_RDI)
+						tempreg=reg_findfree(vreg)
+						reghandle(KREG_RDI)=KREGLOCK
+						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDI))
+					end if
+					asm_code("mov rdi, "+regdst)
 				end if
 
+				asm_code("mov rsi, "+Str(fillchar),KNOALL)
 				if reghandle(KREG_RSI)<>KREGLOCK then
 					vreg=reghandle(KREG_RSI)
 					tempreg=reg_findfree(vreg)
 					reghandle(KREG_RSI)=KREGLOCK
 					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RSI))
 				end if
+				asm_code("mov rsi, "+Str(fillchar),KNOALL)
 
 				if reghandle(KREG_RDX)<>KREGLOCK then
 					vreg=reghandle(KREG_RDX)
@@ -2598,42 +2603,48 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 					reghandle(KREG_RDX)=KREGLOCK
 					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDX))
 				end if
-
-				asm_code("mov rdi, "+regdst)
-				asm_code("mov rsi, "+Str(fillchar),KNOALL)
 				asm_code("mov rdx, "+Str(nbbytes),KNOALL)
+
 			else
 				''if rcx, rdx or r8 are used moved to another register
-				if reghandle(KREG_RCX)<>KREGLOCK then
-					vreg=reghandle(KREG_RCX)
-					tempreg=reg_findfree(vreg)
-					reghandle(KREG_RCX)=KREGLOCK
-					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RCX))
+				if regdst<>*regstrq(KREG_RCX)  then
+					''rcx not the destination
+					if reghandle(KREG_RCX)<>KREGLOCK then
+						''rcx is not free (regallowed forces locked) so moved to another register
+						vreg=reghandle(KREG_RCX)
+						tempreg=reg_findfree(vreg)
+						reghandle(KREG_RCX)=KREGLOCK
+						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RCX))
+					end if
+					asm_code("mov rcx, "+regdst)
 				end if
 
-				if reghandle(KREG_RDX)<>KREGLOCK then
+				if reghandle(KREG_RDX)>=0 then
+					''not KREGFREE neither KREGLOCK, vreg from 0 up to NN
+					''even if locked by regallowed(false) could be freed just above
 					vreg=reghandle(KREG_RDX)
 					tempreg=reg_findfree(vreg)
 					reghandle(KREG_RDX)=KREGLOCK
 					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDX))
 				end if
+				asm_code("mov rdx, "+Str(fillchar),KNOALL)
 
-				if reghandle(KREG_R8)<>KREGLOCK then
+				if reghandle(KREG_R8)>=0 then
 					vreg=reghandle(KREG_R8)
 					tempreg=reg_findfree(vreg)
 					reghandle(KREG_R8)=KREGLOCK
 					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_R8))
 				end if
-
-				asm_code("mov rcx, "+regdst)
-				asm_code("mov rdx, "+Str(fillchar),KNOALL)
 				asm_code("mov r8, "+Str(nbbytes),KNOALL)
 			end if
 
 			asm_code("call memset")
 
 			reg_allowed(true)
-			if regdst<>dst then reghandle(rdst)=KREGFREE :asm_info("hidden freeing register="+*regstrq(rdst))
+			if regdst<>dst then
+				reghandle(rdst)=KREGFREE
+				asm_info("hidden freeing register="+*regstrq(rdst))
+			End If
 			exit sub
 
 		else
@@ -7540,11 +7551,14 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 
 				if ctx.systemv then
 					''if rdi, rsi or rdx are used moved to another register
-					if reghandle(KREG_RDI)<>KREGLOCK then
-						vreg=reghandle(KREG_RDI)
-						tempreg=reg_findfree(vreg)
-						reghandle(KREG_RDI)=KREGLOCK
-						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDI))
+					if op1<>"rdi" then
+						if reghandle(KREG_RDI)<>KREGLOCK then
+							vreg=reghandle(KREG_RDI)
+							tempreg=reg_findfree(vreg)
+							reghandle(KREG_RDI)=KREGLOCK
+							asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDI))
+						end if
+						asm_code("mov rdi, "+op1)
 					end if
 
 					if reghandle(KREG_RSI)<>KREGLOCK then
@@ -7553,6 +7567,7 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 						reghandle(KREG_RSI)=KREGLOCK
 						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RSI))
 					end if
+					asm_code("mov rsi, "+str(fillchar),KNOALL)
 
 					if reghandle(KREG_RDX)<>KREGLOCK then
 						vreg=reghandle(KREG_RDX)
@@ -7560,13 +7575,6 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 						reghandle(KREG_RDX)=KREGLOCK
 						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDX))
 					end if
-
-
-					if op1<>"rdi" then
-						asm_code("mov rdi, "+op1)
-					end if
-
-					asm_code("mov rsi, "+str(fillchar),KNOALL)
 
 					if v2->typ=IR_VREGTYPE_REG then
 						op2=*regstrq(reg_findreal(v2->reg))
@@ -7582,11 +7590,14 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 					End If
 				else
 					''if rcx, rdx or r8 are used moved to another register
-					if reghandle(KREG_RCX)<>KREGLOCK then ''as rcx is used need to transfer its contain to another register
-						vreg=reghandle(KREG_RCX)
-						tempreg=reg_findfree(vreg)
-						reghandle(KREG_RCX)=KREGLOCK
-						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RCX))
+					if op1<>"rcx" then
+						if reghandle(KREG_RCX)<>KREGLOCK then ''as rcx is used need to transfer its contain to another register
+							vreg=reghandle(KREG_RCX)
+							tempreg=reg_findfree(vreg)
+							reghandle(KREG_RCX)=KREGLOCK
+							asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RCX))
+						end if
+						asm_code("mov rcx, "+op1)
 					end if
 
 					if reghandle(KREG_RDX)<>KREGLOCK then
@@ -7595,6 +7606,7 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 						reghandle(KREG_RDX)=KREGLOCK
 						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDX))
 					end if
+					asm_code("mov rdx, "+str(fillchar),KNOALL)
 
 					if reghandle(KREG_R8)<>KREGLOCK then
 						vreg=reghandle(KREG_R8)
@@ -7602,12 +7614,6 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 						reghandle(KREG_R8)=KREGLOCK
 						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_R8))
 					end if
-
-					if op1<>"rcx" then
-						asm_code("mov rcx, "+op1)
-					end if
-
-					asm_code("mov rdx, "+str(fillchar),KNOALL)
 
 					if v2->typ=IR_VREGTYPE_REG then
 						op2=*regstrq(reg_findreal(v2->reg))
