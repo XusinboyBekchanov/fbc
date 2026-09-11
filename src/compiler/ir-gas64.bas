@@ -756,7 +756,21 @@ private sub check_optim(byref code as string)
 			''check register or immediate
 			if part2[0]=asc("r") Or part2[0]=asc("e") or (RIGHT1(part2)>=48 and RIGHT1(part2)<=57) then
 				''OPTIMIZATION 4 lea
-				newcode=instruc+" "+mid(part1,1,instr(part1,"[")-1)+prevpart2+", "+part2
+				if prevpart2[0]<=asc("9") then
+					newcode=instruc+" "+mid(part1,1,instr(part1,"[")-1)+prevpart2+", "+part2
+				else
+					''lea r11, STRG$[rip+0]
+					''mov QWORD PTR 8[r11], 0    --> mov QWORD PTR STRG[rip+8], 0
+					dim as integer spacepos=instr(instr(part1," ")+1,part1," ") ''second space
+					newcode=instruc+" "+mid(part1,1,spacepos) ''mov QWORD PTR
+					newcode+=left(prevpart2,len(prevpart2)-1) ''STRG[rip
+					asm_info("trace here")
+					dim as string tempoffset = mid(part1,spacepos+1,instr(part1,"[")-spacepos-1)
+					if len(tempoffset)<>0 then
+						newcode+="+"+tempoffset ''+8
+					end if
+					newcode+="], "+part2 ''8], 0
+				end if
 				#ifdef __GAS64_DEBUG__
 					mid(ctx.proc_txt,prevwpos)="#04"
 					writepos=len(ctx.proc_txt)+len(code)+9
