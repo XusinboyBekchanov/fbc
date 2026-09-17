@@ -7003,21 +7003,22 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 					''-0.0 case
 					dim as single temposng = v2->value.f
 					if *cptr(ulong ptr,@temposng)=0 then
-						asm_code("xor eax, eax")
+						asm_code("pxor xmm" + Str(cptfloat-1) + ", xmm" + Str(cptfloat-1))
 					else
 						asm_code("mov eax, "+op1)
+						asm_code("movd xmm"+Str(cptfloat-1)+", eax")
 					end if
-					asm_code("movd xmm"+Str(cptfloat-1)+", eax")
 				elseif dtype=FB_DATATYPE_DOUBLE then
 					if  *cptr( ulongint ptr,@v2->value.f) = 0 then
-						asm_code("xor eax, eax") ''whole rax zeroed
+						asm_code("pxor xmm" + Str(cptfloat-1) + ", xmm" + Str(cptfloat-1))
 					else
 						asm_code("mov rax, "+op1)
+						asm_code("movq xmm"+Str(cptfloat-1)+", rax")
 					end if
-					asm_code("movq xmm"+Str(cptfloat-1)+", rax")
+
 					if variadic=true and ctx.target=FB_COMPTARGET_WIN32 then
 						''move also directly on stack only for win32
-						asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], rax",KNOOPTIM)
+						asm_code("movq QWORD PTR "+Str((cptarg-1)*8)+"[rsp], xmm"+Str(cptfloat-1),KNOOPTIM)
 						''also in General purpose register
 						asm_code("movq "+*regstrq(listreg(cptint))+", xmm"+Str(cptfloat-1))
 					end if
