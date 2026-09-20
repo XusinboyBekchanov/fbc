@@ -6921,15 +6921,14 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 						''Immediat
 						if dtype=FB_DATATYPE_SINGLE then
 							''-0.0 case
-							dim as single temposng = v2->value.f
-							if *cptr(ulong ptr,@temposng)=0 then
+							if v2->value.i = 0 then
 								asm_code("xor eax, eax")
 							else
 								asm_code("mov eax, "+op1)
 							end if
 							asm_code("mov DWORD PTR "+Str((cptarg-1)*8)+"[rsp], eax")
 						elseif dtype=FB_DATATYPE_DOUBLE then
-							if  *cptr( ulongint ptr,@v2->value.f) = 0 then
+							if v2->value.i = 0 then
 								asm_code("xor rax, rax")
 							else
 								asm_code("mov rax, "+op1)
@@ -7001,15 +7000,14 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 				''Immediat
 				if dtype=FB_DATATYPE_SINGLE then
 					''-0.0 case
-					dim as single temposng = v2->value.f
-					if *cptr(ulong ptr,@temposng)=0 then
+					if v2->value.i = 0 then
 						asm_code("pxor xmm" + Str(cptfloat-1) + ", xmm" + Str(cptfloat-1))
 					else
 						asm_code("mov eax, "+op1)
 						asm_code("movd xmm"+Str(cptfloat-1)+", eax")
 					end if
 				elseif dtype=FB_DATATYPE_DOUBLE then
-					if  *cptr( ulongint ptr,@v2->value.f) = 0 then
+					if v2->value.i = 0 then
 						asm_code("pxor xmm" + Str(cptfloat-1) + ", xmm" + Str(cptfloat-1))
 					else
 						asm_code("mov rax, "+op1)
