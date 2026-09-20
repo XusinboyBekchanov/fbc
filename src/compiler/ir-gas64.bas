@@ -6689,6 +6689,8 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 	'' args
 	arg = listGetTail( @irhl.callargs )
 	while( arg andalso (arg->level = level) )
+		dim as string str_rsp_offset
+		dim as string str_xmm_reg
 		prev = listGetPrev( arg )
 		v2 = arg->vr
 		op3=""
@@ -6761,6 +6763,8 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 
 		if typeget(dtype)=FB_DATATYPE_POINTER then dtype=FB_DATATYPE_INTEGER
 		paramtype=param_analyze(dtype,v2->subtype,cptarg,cptint,cptfloat)
+		str_rsp_offset = Str((cptarg-1)*8) + "[rsp]"
+		str_xmm_reg = "xmm" + Str(cptfloat-1)
 		asm_info("KPARAM="+str(paramtype))
 
 		if paramtype>=KPARAMSK0 then
@@ -6866,28 +6870,28 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 					if v2->typ=IR_VREGTYPE_REG then
 						select case as const lgt
 							case 1
-								asm_code("mov BYTE PTR "+Str((cptarg-1)*8)+"[rsp], "+op1)
+								asm_code("mov BYTE PTR "+str_rsp_offset+", "+op1)
 							case 2
-								asm_code("mov WORD PTR "+Str((cptarg-1)*8)+"[rsp], "+op1)
+								asm_code("mov WORD PTR "+str_rsp_offset+", "+op1)
 							case 4
-								asm_code("mov DWORD PTR "+Str((cptarg-1)*8)+"[rsp], "+op1)
+								asm_code("mov DWORD PTR "+str_rsp_offset+", "+op1)
 							case 8
-								asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], "+op1)
+								asm_code("mov QWORD PTR "+str_rsp_offset+", "+op1)
 						end select
 					else
 						select case as const lgt
 							case 1
 								asm_code("mov al, "+op1)
-								asm_code("mov BYTE PTR "+Str((cptarg-1)*8)+"[rsp], al")
+								asm_code("mov BYTE PTR "+str_rsp_offset+", al")
 							case 2
 								asm_code("mov ax, "+op1)
-								asm_code("mov WORD PTR "+Str((cptarg-1)*8)+"[rsp], ax")
+								asm_code("mov WORD PTR "+str_rsp_offset+", ax")
 							case 4
 								asm_code("mov eax, "+op1)
-								asm_code("mov DWORD PTR "+Str((cptarg-1)*8)+"[rsp], eax")
+								asm_code("mov DWORD PTR "+str_rsp_offset+", eax")
 							case 8
 								asm_code("mov rax, "+op1)
-								asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], rax")
+								asm_code("mov QWORD PTR "+str_rsp_offset+", rax")
 						end select
 					end if
 				elseif paramtype=KPARAMSK2 then
@@ -6913,7 +6917,7 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 					asm_code("lea "+*regstrq(listreg(cptint))+", "+str(-ctx.stkcopy)+"[rbp]")
 
 					if variadic=true and ctx.target=FB_COMPTARGET_WIN32 then
-						asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], "+*regstrq(listreg(cptint)),KNOOPTIM)
+						asm_code("mov QWORD PTR "+str_rsp_offset+", "+*regstrq(listreg(cptint)),KNOOPTIM)
 					end if
 				else
 					''KPARAMSK3
@@ -6926,14 +6930,14 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 							else
 								asm_code("mov eax, "+op1)
 							end if
-							asm_code("mov DWORD PTR "+Str((cptarg-1)*8)+"[rsp], eax")
+							asm_code("mov DWORD PTR "+str_rsp_offset+", eax")
 						elseif dtype=FB_DATATYPE_DOUBLE then
 							if v2->value.i = 0 then
 								asm_code("xor rax, rax")
 							else
 								asm_code("mov rax, "+op1)
 							end if
-							asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], rax")
+							asm_code("mov QWORD PTR "+str_rsp_offset+", rax")
 						else
 							if v2->value.i<-2147483648 or v2->value.i>2147483647 then
 								if v2->value.i>=0 and v2->value.i<4294967296 then
@@ -6941,9 +6945,9 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 								else
 									asm_code("mov rax, "+op1)
 								end if
-								asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], rax")
+								asm_code("mov QWORD PTR "+str_rsp_offset+", rax")
 							else
-								asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], "+op1)
+								asm_code("mov QWORD PTR "+str_rsp_offset+", "+op1)
 							end if
 						end if
 					else
@@ -6957,9 +6961,9 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 								asm_info("stk10="+Str(ctx.stkcopy))
 								memcopy(v2->subtype->lgt,op1,str(-ctx.stkcopy)+"[rbp]",KUSE_MOV,KUSE_LEA)
 								asm_code("lea rax, "+Str(-ctx.stkcopy)+"[rbp]")
-								asm_code("mov "+Str((cptarg-1)*8)+"[rsp], rax")
+								asm_code("mov "+str_rsp_offset+", rax")
 							else
-								asm_code("mov "+Str((cptarg-1)*8)+"[rsp], "+op1)
+								asm_code("mov "+str_rsp_offset+", "+op1)
 							end if
 						else
 							if v2->typ=IR_VREGTYPE_OFS or (dtype=FB_DATATYPE_STRUCT) then
@@ -6980,9 +6984,9 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 								asm_info("stk11="+Str(ctx.stkcopy))
 								memcopy(v2->subtype->lgt,"rax",Str(-ctx.stkcopy)+"[rbp]",KUSE_MOV,KUSE_LEA)
 								asm_code("lea rax, "+Str(-ctx.stkcopy)+"[rbp]")
-								asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], rax")
+								asm_code("mov QWORD PTR "+str_rsp_offset+", rax")
 							else
-								asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], rax")
+								asm_code("mov QWORD PTR "+str_rsp_offset+", rax")
 							end if
 						end if
 					end if
@@ -7001,24 +7005,24 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 				if dtype=FB_DATATYPE_SINGLE then
 					''-0.0 case
 					if v2->value.i = 0 then
-						asm_code("pxor xmm" + Str(cptfloat-1) + ", xmm" + Str(cptfloat-1))
+						asm_code("pxor "+str_xmm_reg + ", "+str_xmm_reg)
 					else
 						asm_code("mov eax, "+op1)
-						asm_code("movd xmm"+Str(cptfloat-1)+", eax")
+						asm_code("movd " + str_xmm_reg + ", eax")
 					end if
 				elseif dtype=FB_DATATYPE_DOUBLE then
 					if v2->value.i = 0 then
-						asm_code("pxor xmm" + Str(cptfloat-1) + ", xmm" + Str(cptfloat-1))
+						asm_code("pxor "+str_xmm_reg + ", "+str_xmm_reg)
 					else
 						asm_code("mov rax, "+op1)
-						asm_code("movq xmm"+Str(cptfloat-1)+", rax")
+						asm_code("movq "+str_xmm_reg+", rax")
 					end if
 
 					if variadic=true and ctx.target=FB_COMPTARGET_WIN32 then
 						''move also directly on stack only for win32
-						asm_code("movq QWORD PTR "+Str((cptarg-1)*8)+"[rsp], xmm"+Str(cptfloat-1),KNOOPTIM)
+						asm_code("movq QWORD PTR "+str_rsp_offset+", "+str_xmm_reg,KNOOPTIM)
 						''also in General purpose register
-						asm_code("movq "+*regstrq(listreg(cptint))+", xmm"+Str(cptfloat-1))
+						asm_code("movq "+*regstrq(listreg(cptint))+", "+str_xmm_reg)
 					end if
 				else
 					''whole number
@@ -7036,7 +7040,7 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 						end select
 					end if
 					if variadic=true and ctx.target=FB_COMPTARGET_WIN32 then
-						asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], "+*regstrq(listreg(cptint)),KNOOPTIM)
+						asm_code("mov QWORD PTR "+str_rsp_offset+", "+*regstrq(listreg(cptint)),KNOOPTIM)
 					end if
 				end if
 			''=======================================
@@ -7079,28 +7083,28 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 						if v2->typ=IR_VREGTYPE_REG then
 							select case as const lgt
 								case 1
-									asm_code("mov BYTE PTR "+Str((cptarg-1)*8)+"[rsp], "+op1)
+									asm_code("mov BYTE PTR "+str_rsp_offset+", "+op1)
 								case 2
-									asm_code("mov WORD PTR "+Str((cptarg-1)*8)+"[rsp], "+op1)
+									asm_code("mov WORD PTR "+str_rsp_offset+", "+op1)
 								case 4
-									asm_code("mov DWORD PTR "+Str((cptarg-1)*8)+"[rsp], "+op1)
+									asm_code("mov DWORD PTR "+str_rsp_offset+", "+op1)
 								case 8
-									asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], "+op1)
+									asm_code("mov QWORD PTR "+str_rsp_offset+", "+op1)
 							end select
 						else
 							select case as const lgt
 								case 1
 									asm_code("mov al, "+op1)
-									asm_code("mov BYTE PTR "+Str((cptarg-1)*8)+"[rsp], al")
+									asm_code("mov BYTE PTR "+str_rsp_offset+", al")
 								case 2
 									asm_code("mov ax, "+op1)
-									asm_code("mov WORD PTR "+Str((cptarg-1)*8)+"[rsp], ax")
+									asm_code("mov WORD PTR "+str_rsp_offset+", ax")
 								case 4
 									asm_code("mov eax, "+op1)
-									asm_code("mov DWORD PTR "+Str((cptarg-1)*8)+"[rsp], eax")
+									asm_code("mov DWORD PTR "+str_rsp_offset+", eax")
 								case 8
 									asm_code("mov rax, "+op1)
-									asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], rax")
+									asm_code("mov QWORD PTR "+str_rsp_offset+", rax")
 							end select
 						end if
 					end if
@@ -7114,27 +7118,27 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 						asm_code("lea "+*regstrq(listreg(cptint))+", "+op1)
 					end if
 					if variadic=true and ctx.target=FB_COMPTARGET_WIN32 then
-						asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], "+*regstrq(listreg(cptint)),KNOOPTIM)
+						asm_code("mov QWORD PTR "+str_rsp_offset+", "+*regstrq(listreg(cptint)),KNOOPTIM)
 					end if
 				else
 					''====   not byval nor OFS
 					if( typeGetClass( dtype ) = FB_DATACLASS_FPOINT ) then
 						if dtype=FB_DATATYPE_DOUBLE then
 							if v2->typ=IR_VREGTYPE_REG then
-								asm_code("movq xmm"+Str(cptfloat-1)+", "+op1)
+								asm_code("movq "+str_xmm_reg+", "+op1)
 							else
-								asm_code("movsd xmm"+Str(cptfloat-1)+", "+op1)
+								asm_code("movsd "+str_xmm_reg+", "+op1)
 							end if
 						else '' FB_DATATYPE_SINGLE
 							if v2->typ=IR_VREGTYPE_REG then
-								asm_code("movd xmm"+Str(cptfloat-1)+", "+op1)
+								asm_code("movd "+str_xmm_reg+", "+op1)
 							else
-								asm_code("movss xmm"+Str(cptfloat-1)+", "+op1)
+								asm_code("movss "+str_xmm_reg+", "+op1)
 							end if
 						end if
 						if variadic=true and ctx.target=FB_COMPTARGET_WIN32 then
-							asm_code("movsd QWORD PTR "+Str((cptarg-1)*8)+"[rsp], xmm"+Str(cptfloat-1),KNOOPTIM)
-							asm_code("movq "+*regstrq(listreg(cptint))+", xmm"+Str(cptfloat-1))
+							asm_code("movsd QWORD PTR "+str_rsp_offset+", "+str_xmm_reg,KNOOPTIM)
+							asm_code("movq "+*regstrq(listreg(cptint))+", "+str_xmm_reg)
 						end if
 					else
 						reg_transfer(listreg(cptint),reg2)''is the reg free ?
@@ -7187,7 +7191,7 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 						end select
 
 						if variadic=true and ctx.target=FB_COMPTARGET_WIN32 then
-							asm_code("mov QWORD PTR "+Str((cptarg-1)*8)+"[rsp], "+*regstrq(listreg(cptint)),KNOOPTIM)
+							asm_code("mov QWORD PTR "+str_rsp_offset+", "+*regstrq(listreg(cptint)),KNOOPTIM)
 						end if
 					end if
 				end if
