@@ -7216,7 +7216,7 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 	if pushsize then
 		if pushsize mod 16 then
 			''should be a multiple of 16
-			pushpad=16-(pushsize mod 16)
+			pushpad = (16 - (pushsize and 15)) and 15
 			asm_code("sub rsp, "+str(pushpad))
 		end if
 		for istr as integer =pushnbstr to 1 step -1
