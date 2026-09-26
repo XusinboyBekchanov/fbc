@@ -495,11 +495,12 @@ end function
 ''  gave "", valint("") gave 0, and the operand silently became the literal
 ''  "8[rbp]" - the saved RETURN ADDRESS.
 private function hTryRbpOffset( byref op as string, byref outop as string, byval delta as integer ) as integer
-	dim as integer p = instr( op, "[rbp]" )
-	if p <= 1 then return FALSE                  '' no "[rbp]", or nothing before it
-	if p + 4 <> len( op ) then return FALSE      '' "[rbp]" must be the whole tail
-	outop = str( valint( left( op, p - 1 ) ) + delta ) + "[rbp]"
-	return TRUE
+	dim as integer l = len(op)
+	if l > 5 andalso right(op, 5) = "[rbp]" then
+		'' ValInt to get the number
+		outop = str(valint(op) + delta) + "[rbp]"
+		return TRUE
+	end if
 end function
 '' ================== for optimization =========================================================
 ''see comment in reg_freeable about use of *<var ptr> for comparing string
@@ -3008,9 +3009,9 @@ private sub hemitvariable( byval sym as FBSYMBOL ptr )
 						asm_info("Natalign= changed for 4")
 						align=4 ''alignment at least 4"
 					end if
-					ctx.stk=(length+ctx.stk+align-1) And (Not(align-1))
+					ctx.stk = (length + ctx.stk + align + 7) and (not 7ll)
 				else
-					ctx.stk=(length+ctx.stk+lgt-1) And (Not(lgt-1))
+					ctx.stk = (length + ctx.stk + lgt+ 7) and (not 7ll)
 				end if
 				asm_info("stk1="+Str(ctx.stk))
 				sym->ofs=-ctx.stk
@@ -3729,7 +3730,7 @@ private sub _procallocarg( byval proc as FBSYMBOL ptr, byval sym as FBSYMBOL ptr
 					''''''end if
 					asm_info("ctx.ofs="+Str(ctx.ofs))
 					sym->ofs=ctx.ofs
-					ctx.ofs+=sym->lgt
+					ctx.ofs += (sym->lgt + 7) and (not 7ll)
 					asm_info("Linux stack ctx.ofs="+Str(ctx.ofs))
 				'elseif paramtype=KPARAMSK then
 				' not sure is this case can happen ?
@@ -3740,8 +3741,7 @@ private sub _procallocarg( byval proc as FBSYMBOL ptr, byval sym as FBSYMBOL ptr
 					asm_info("Copying byval parameter directly from register")
 					lgt = symbGetSizeOf( sym )
 					asm_info("stk="+Str(ctx.stk))
-					ctx.stk=(lgt+ctx.stk+lgt-1) And (Not(lgt-1))
-					'ctx.stk+=8-(ctx.stk mod 8)
+					ctx.stk = (ctx.stk + lgt + 7) and (not 7ll)
 					asm_info("stk91="+Str(ctx.stk))
 					sym->ofs=-ctx.stk
 					select case as const paramtype
@@ -3787,8 +3787,7 @@ private sub _procallocarg( byval proc as FBSYMBOL ptr, byval sym as FBSYMBOL ptr
 					if ctx.argfloat<=8 then
 						''otherwise already in memory
 						asm_info("stk="+Str(ctx.stk))
-						ctx.stk=(lgt+ctx.stk+lgt-1) And (Not(lgt-1))
-						'ctx.stk+=8-(ctx.stk mod 8)
+						ctx.stk = (ctx.stk + lgt + 7) and (not 7ll)
 						asm_info("stk93="+Str(ctx.stk))
 						sym->ofs=-ctx.stk
 						if lgt=4 then
@@ -3805,8 +3804,7 @@ private sub _procallocarg( byval proc as FBSYMBOL ptr, byval sym as FBSYMBOL ptr
 					ctx.arginteg+=1
 					if ctx.arginteg<=6 then
 						asm_info("stk="+Str(ctx.stk))
-						ctx.stk=(lgt+ctx.stk+lgt-1) And (Not(lgt-1))
-						'ctx.stk+=8-(ctx.stk mod 8)
+						ctx.stk = (ctx.stk + lgt + 7) and (not 7ll)
 						asm_info("stk94="+Str(ctx.stk))
 						sym->ofs=-ctx.stk
 						select case as const lgt
@@ -3832,8 +3830,7 @@ private sub _procallocarg( byval proc as FBSYMBOL ptr, byval sym as FBSYMBOL ptr
 			lgt=8
 			if ctx.arginteg<=6 then
 				asm_info("stk="+Str(ctx.stk))
-				ctx.stk=(lgt+ctx.stk+lgt-1) And (Not(lgt-1))
-				'ctx.stk+=8-(ctx.stk mod 8)
+				ctx.stk = (ctx.stk + lgt + 7) and (not 7ll)
 				asm_info("stk95="+Str(ctx.stk))
 				sym->ofs=-ctx.stk
 				asm_code("mov QWORD PTR "+Str(sym->ofs)+"[rbp], "+*regstrq(listreg(ctx.arginteg)))
@@ -7938,6 +7935,7 @@ private sub _emitvarinif( byval sym as FBSYMBOL ptr, byval value as double )
 	asm_code(hFloatToHex_asm64(value,symbGetType( sym )))
 end sub
 private sub _emitprocbegin(byval proc as FBSYMBOL ptr,byval initlabel as FBSYMBOL ptr)
+	dim as string proc_name = *symbGetMangledName(proc)
 
 	irhlEmitProcBegin( ) ''just : irhl.regcount = 0
 
@@ -7958,7 +7956,7 @@ private sub _emitprocbegin(byval proc as FBSYMBOL ptr,byval initlabel as FBSYMBO
 	ctx.proccalling=false
 	ctxdbg.lnum=-1
 	asm_info("=============================================================================")
-	asm_info("===== Proc begin : "+ *symbGetMangledName( proc )+" =====")
+	asm_info("===== Proc begin : "+ proc_name +" =====")
 	asm_info("=============================================================================")
 
 	ctx.arginteg=0 ''nb arg integer
@@ -7977,7 +7975,7 @@ private sub _emitprocbegin(byval proc as FBSYMBOL ptr,byval initlabel as FBSYMBO
 
 	if( symbIsExport( proc ) ) then
 		asm_section(".drectve")
-		asm_code(".ascii "" -export:"+*symbGetMangledName( proc )+"""")
+		asm_code(".ascii "" -export:"+proc_name+"""")
 		asm_section(".text")
 	end if
 
@@ -7997,10 +7995,10 @@ private sub _emitprocbegin(byval proc as FBSYMBOL ptr,byval initlabel as FBSYMBO
 
 	asm_code(".text")
 	if symbisprivate(proc)=FALSE then
-		asm_code(".globl "+*symbGetMangledName( proc ))
+		asm_code(".globl "+proc_name)
 	end if
-	cfi_windows_asm_code(".seh_proc "+*symbGetMangledName( proc ))
-	asm_code(*symbGetMangledName( proc )+":")
+	cfi_windows_asm_code(".seh_proc "+proc_name)
+	asm_code(proc_name+":")
 	cfi_asm_code(".cfi_startproc")
 
 	asm_info("stk4="+Str(ctx.stk)+" reserved space for saving registers when proc calls")
@@ -8017,7 +8015,7 @@ private sub _emitprocend _
 	byval initlabel as FBSYMBOL ptr, _
 	byval exitlabel as FBSYMBOL ptr _
 	)
-	dim as string restreg,lname
+	dim as string restreg,lname,proc_name = *symbGetMangledName(proc)
 	asm_info("stk="+Str(ctx.stk))
 	if ctx.stkmax>ctx.stk then ctx.stk=ctx.stkmax
 
@@ -8059,7 +8057,7 @@ private sub _emitprocend _
 		cfi_windows_asm_code(".seh_endprologue")
 
 		if ctx.stk>=culngint( ctx.maxstack ) then
-			dim as string msgex=" proc="+*symbGetMangledName( proc )+" STACK OVERFLOW, review array size, use redim/shared or increase stack size"
+			dim as string msgex=" proc="+proc_name+" STACK OVERFLOW, review array size, use redim/shared or increase stack size"
 			errReportWarnex(FB_WARNINGMSG_HUGEVARONSTACK,0,-1,,strptr(msgex) )
 		end if
 		'inside prolog/epilog
@@ -8092,7 +8090,7 @@ private sub _emitprocend _
 			if ctx.arginteg <6 then asm_code("mov QWORD PTR -112[rbp], r9")
 			''if eax is null no float argument so need to save them
 			lname = *symbUniqueLabel( )
-			asm_code("test eax, eax")
+			asm_code("test al, al")
 			asm_code("jz "+lname)
 			if ctx.argfloat <1 then asm_code("movq QWORD PTR -104[rbp], xmm0")
 			if ctx.argfloat <2 then asm_code("movq QWORD PTR -96[rbp], xmm1")
@@ -8115,7 +8113,7 @@ private sub _emitprocend _
 	end if
 	if( env.clopt.debuginfo = true ) then
 		lname = *symbUniqueLabel( )
-		dbg_addstab(,STAB_TYPE_RBRAC,,lname+"-"+*symbGetMangledName( ctxdbg.proc ))
+		dbg_addstab(,STAB_TYPE_RBRAC,,lname+"-"+proc_name)
 		asm_code(lname+":")
 	end if
 
@@ -8151,7 +8149,7 @@ private sub _emitprocend _
 			if reghandle(ireg) <> KREGFREE then leaked += " " + *regstrq(ireg) + "=vreg" + str(reghandle(ireg))
 			if regroom(ireg).status <> KROOMFREE then leaked += " " + *regstrq(ireg) + "=ROOM" + str(regroom(ireg).status)
 		next
-		if len(leaked) then print "PROBE " + *symbGetMangledName(proc) + ":" + leaked
+		if len(leaked) then print "PROBE " + proc_name + ":" + leaked
 		end scope
 	#endif
 
