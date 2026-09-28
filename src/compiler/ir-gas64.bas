@@ -8275,7 +8275,6 @@ private sub _emitMacro( byval op as integer,byval v1 as IRVREG ptr, byval v2 as 
 '# Info --> v2=var PAD4 ofs=48 [integer] symbdump=var local parambyval accessed declared PAD4 [integer]
 '# Info --> vr=<NULL>
 			tempo1 = irhlAllocVreg( FB_DATATYPE_INTEGER, 0 )
-			reg_findfree(tempo1->reg)
 			''gp_offset
 			''fp_offset
 			''overflow_arg_area
@@ -8293,6 +8292,7 @@ private sub _emitMacro( byval op as integer,byval v1 as IRVREG ptr, byval v2 as 
 				asm_code("mov QWORD PTR 16["+regvalist+"], rax")
 
 			else
+				reg_findfree(tempo1->reg)
 				asm_code("lea "+*regstrq(reg_findreal(tempo1->reg))+", "+str(ctx.arginteg*8+16)+"[rbp]")
 				_emitstore(v1,tempo1)
 			end if
