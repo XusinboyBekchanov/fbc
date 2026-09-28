@@ -7232,7 +7232,11 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 	if variadic=true then
 		if ctx.systemv then
 			''eax indicates if there is at least a float parameter
-			asm_code("mov eax, "+str(iif(cptfloat<=8,cptfloat,8)))
+			if cptfloat = 0 then
+				asm_code("xor eax, eax")
+			Else
+				asm_code("mov eax, "+str(iif(cptfloat<=8,cptfloat,8)))
+			end if
 		end if
 	end if
 
