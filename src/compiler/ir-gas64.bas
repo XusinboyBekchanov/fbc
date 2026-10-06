@@ -2558,7 +2558,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 	dim as uinteger nbbytes=CUnsg(bytestofill),nooptim
 	dim as string lname,regdst
 	dim as integer nb8,rdst
-	dim as ulongint fill2, fill4
+	dim as ulongint fill2, fill4, fill8
 
 	if instr("rcx rdx rbx rdi rsi r8 r9 r10 r11 r12 r13 r14 r15",dst) then
 		regdst=dst
@@ -2583,11 +2583,62 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 		fillchar = fillchar and 255
 		fill2 = fillchar or (fillchar shl 8)
 		fill4 = fill2 or (fill2 shl 16)
+		fill8 = fill4 or (fill4 shl 32)
 	end if
 
-	if nbbytes>7 then  ''clear by 8 bytes step
-		nb8=nbbytes\8
-		if nb8>7 then ''more than 7 times 64+
+	if nbbytes>15 then
+		if nbbytes<=128 then
+			''SSE
+			dim as integer nb16 = nbbytes \ 16
+
+			if fill8=0 then
+				asm_code("pxor xmm0, xmm0",KNOALL)
+			Else
+				dim as integer tempreg = reg_findfree(999997)
+				asm_code("mov "+*regstrq(tempreg)+", "+Str(fill8))
+				asm_code("movq xmm0, "+*regstrq(tempreg))
+				reghandle(tempreg) = KREGFREE
+			end if
+			asm_code("punpcklqdq xmm0, xmm0") '' duplicate lower 64 bits to upper 64 bits
+
+			for inb16 as integer = 0 To nb16 - 1
+				'' movdqu = Move Double Quadword Unaligned
+				asm_code("movdqu XMMWORD PTR "+Str(inb16*16)+"["+regdst+"], xmm0", KNOOPTIM)
+			next
+			nbbytes -= (nb16 * 16)
+			if nbbytes <> 0 then
+				asm_code("add "+regdst+", "+str(nb16*16))
+			end if
+		elseif nbbytes<=2048 then ' 048 then
+			'' rep stosq
+			dim as integer flagrdi,flagrcx
+			nb8=nbbytes\8
+			if reghandle(KREG_RCX)<>KREGFREE then
+				flagrcx=1
+				asm_code("push rcx",KNOALL)
+			End If
+			if regdst<>*regstrq(KREG_RDI) then
+				if reghandle(KREG_RDI)<>KREGFREE then
+					flagrdi=1
+					asm_code("push rdi",KNOALL)
+				end if
+				asm_code("mov rdi, "+regdst, KNOOPTIM)
+			end if
+			asm_code("mov rcx, "+str(nb8), KNOALL)
+			asm_code("mov rax, "+Str(fill8))
+			asm_code("rep stosq")
+			if flagrdi=1 then
+				asm_code("pop rdi")
+			end if
+			if flagrcx=1 then
+				asm_code("pop rcx")
+			end if
+			nbbytes-=nb8*8
+			if nbbytes<>0 then
+				asm_code("add "+regdst+", "+str(nb8*8))
+			end if
+		else
+			''memset
 			dim as integer tempreg,vreg
 			''to avoid the use of rcx/rdi,rdx/rsi and r8/rdx like free registers
 			reg_allowed(false)
@@ -2657,28 +2708,47 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 			reg_allowed(true)
 			if regdst<>dst then
 				reghandle(rdst)=KREGFREE
-				asm_info("hidden freeing register="+*regstrq(rdst))
+				asm_info("hidden 04 freeing register="+*regstrq(rdst))
 			End If
 			exit sub
 
+		End If
+	End If
+
+	if nbbytes > 7 then
+		''clear 8 bytes
+		if fill8=0 then
+			asm_code("mov QWORD PTR ["+regdst+"], 0", nooptim)
 		else
-			if( fill4 = 0 ) then
-				for inb8 as integer = 0 To nb8-1
-					asm_code("mov QWORD PTR "+Str(inb8*8)+"["+regdst+"], 0",nooptim)
-				next
-			else
-				for inb8 as integer = 0 To nb8-1
-					asm_code("mov DWORD PTR "+Str(inb8*8)+"["+regdst+"], "+Str(fill4),nooptim)
-					asm_code("mov DWORD PTR "+Str(inb8*8+4)+"["+regdst+"], "+Str(fill4),nooptim)
-				next
-			end if
-			nbbytes-=nb8*8
-			if nbbytes<>0 then
-				asm_code("add "+regdst+", "+str(nb8*8))
-			end if
+			asm_code("mov rax, "+Str(fill8))
+			asm_code("mov QWORD PTR ["+regdst+"], rax", nooptim)
 		end if
-	end if
-	if nbbytes>3 then
+		nbbytes -= 8
+		if nbbytes>3 then
+			''clear or fill 7/6/5/4 bytes
+			asm_code("mov DWORD PTR 8["+regdst+"], "+Str(fill4),nooptim)
+			nbbytes-=4
+			if nbbytes>1 then
+				asm_code("mov WORD PTR 12["+regdst+"], "+Str(fill2),nooptim)
+				nbbytes-=2
+				if nbbytes>0 then
+					asm_code("mov BYTE PTR 14["+regdst+"], "+Str(fillchar),nooptim)
+				end if
+			elseif nbbytes>0 then
+				asm_code("mov BYTE PTR 12["+regdst+"], "+Str(fillchar),nooptim)
+			end if
+		elseif nbbytes>1 then
+			''clear or fill 2/3 bytes
+			asm_code("mov WORD PTR 8["+regdst+"], "+Str(fill2),nooptim)
+			nbbytes-=2
+			if nbbytes>0 then
+				asm_code("mov BYTE PTR 10["+regdst+"], "+Str(fillchar),nooptim)
+			end if
+		elseif nbbytes>0 then
+			 ''clear or fill 1 byte
+			asm_code("mov BYTE PTR 8["+regdst+"], "+Str(fillchar))
+		end if
+	elseif nbbytes>3 then
 		''clear 7/6/5/4 bytes
 		asm_code("mov DWORD PTR ["+regdst+"], "+Str(fill4),nooptim)
 		nbbytes-=4
@@ -2702,7 +2772,11 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 		 ''clear 1 byte
 		asm_code("mov BYTE PTR ["+regdst+"], "+Str(fillchar))
 	end if
-	if regdst<>dst then reghandle(rdst)=KREGFREE :asm_info("hidden freeing register="+*regstrq(rdst))
+
+	if regdst<>dst then
+		reghandle(rdst)=KREGFREE
+		asm_info("hidden 01 freeing register="+*regstrq(rdst))
+	End If
 end sub
 ''=============================================
 '' MEMCOPY size should be known at compile time
@@ -2747,7 +2821,7 @@ private sub memcopy(byval bytestocopy as Integer,byref src as string, byref dst 
 	if nb8>7 then ''greater than 7 times * 8 bytes
 		rnbb=reg_findfree(999996)
 		regnbb=*regstrq(rnbb)
-		reghandle(rnbb)=KREGFREE:asm_info("hidden freeing register="+*regstrq(rnbb))
+		reghandle(rnbb)=KREGFREE:asm_info("hidden 02 freeing register="+*regstrq(rnbb))
 		asm_code("mov "+regnbb+", "+Str(nb8))
 
 		lname=*symbUniqueLabel( )
@@ -2803,8 +2877,7 @@ private sub memcopy(byval bytestocopy as Integer,byref src as string, byref dst 
 		asm_code("mov BYTE PTR ["+regdst+"], al")
 	end if
 
-	if regsrc<>src then reghandle(rsrc)=KREGFREE :asm_info("hidden freeing register="+*regstrq(rsrc))''free registers
-	if regdst<>dst then reghandle(rdst)=KREGFREE :asm_info("hidden freeing register="+*regstrq(rdst))
+	if regdst<>dst then reghandle(rdst)=KREGFREE :asm_info("hidden 03 freeing register="+*regstrq(rdst))
 
 end sub
 
@@ -7698,17 +7771,20 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 							asm_code("mov QWORD PTR [rax], 0")
 						end if
 					else
-						dim as ulongint fill4 = (fillchar and 255)
-						fill4 or= fill4 shl 8
-						fill4 or= fill4 shl 16
+						dim as ulongint fill8 = (fillchar and 255)
+						fill8 or= fill8 shl 8
+						fill8 or= fill8 shl 16
+						fill8 or= fill8 shl 32
+
+						dim as integer tempreg = reg_findfree(999997)
+						asm_code("mov "+*regstrq(tempreg)+", "+Str(fill8))
 						if v1->typ=IR_VREGTYPE_REG then
-							asm_code("mov DWORD PTR ["+op1+"], " + str(fill4))
-							asm_code("mov DWORD PTR 4["+op1+"], " + str(fill4))
+							asm_code("mov QWORD PTR ["+op1+"], " + *regstrq(tempreg))
 						else
 							asm_code(instruc+"rax, "+op1)
-							asm_code("mov DWORD PTR [rax], " + str(fill4))
-							asm_code("mov DWORD PTR 4[rax], " + str(fill4))
+							asm_code("mov QWORD PTR [rax], " + *regstrq(tempreg))
 						end if
+						reghandle(tempreg) = KREGFREE
 					end if
 			end select
 
