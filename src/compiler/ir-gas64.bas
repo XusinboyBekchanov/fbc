@@ -2589,7 +2589,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 	if nbbytes>15 then
 		if nbbytes<=128 then
 			''SSE
-			dim as integer nb16 = nbbytes \ 16
+			dim as integer nb16 = nbbytes \ 16,nbbsav=nbbytes
 
 			if fill8=0 then
 				asm_code("pxor xmm0, xmm0",KNOALL)
@@ -2607,9 +2607,14 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 			next
 			nbbytes -= (nb16 * 16)
 			if nbbytes <> 0 then
-				asm_code("add "+regdst+", "+str(nb16*16))
+				asm_code("movdqu XMMWORD PTR "+Str(nbbsav-16)+"["+regdst+"], xmm0", KNOOPTIM)
 			end if
-		elseif nbbytes<=2048 then ' 048 then
+			if regdst<>dst then
+				reghandle(rdst)=KREGFREE
+				asm_info("hidden 05 freeing register="+*regstrq(rdst))
+			End If
+			exit sub
+		elseif nbbytes<=2048 then
 			'' rep stosq
 			dim as integer flagrdi,flagrcx
 			nb8=nbbytes\8
@@ -2636,6 +2641,12 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 			nbbytes-=nb8*8
 			if nbbytes<>0 then
 				asm_code("add "+regdst+", "+str(nb8*8))
+			else
+				if regdst<>dst then
+					reghandle(rdst)=KREGFREE
+					asm_info("hidden 06 freeing register="+*regstrq(rdst))
+				End If
+				exit sub
 			end if
 		else
 			''memset
@@ -2644,7 +2655,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 			reg_allowed(false)
 			if ctx.systemv then
 				''if rdi, rsi or rdx are used moved to another register (see below rcx case)
-				if regdst<>*regstrq(KREG_RDI)  then
+				if regdst<>*regstrq(KREG_RDI) then
 					if reghandle(KREG_RDI)<>KREGLOCK then
 						vreg=reghandle(KREG_RDI)
 						tempreg=reg_findfree(vreg)
@@ -2714,7 +2725,6 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 
 		End If
 	End If
-
 	if nbbytes > 7 then
 		''clear 8 bytes
 		if fill8=0 then
@@ -2724,31 +2734,11 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 			asm_code("mov QWORD PTR ["+regdst+"], rax", nooptim)
 		end if
 		nbbytes -= 8
-		if nbbytes>3 then
-			''clear or fill 7/6/5/4 bytes
-			asm_code("mov DWORD PTR 8["+regdst+"], "+Str(fill4),nooptim)
-			nbbytes-=4
-			if nbbytes>1 then
-				asm_code("mov WORD PTR 12["+regdst+"], "+Str(fill2),nooptim)
-				nbbytes-=2
-				if nbbytes>0 then
-					asm_code("mov BYTE PTR 14["+regdst+"], "+Str(fillchar),nooptim)
-				end if
-			elseif nbbytes>0 then
-				asm_code("mov BYTE PTR 12["+regdst+"], "+Str(fillchar),nooptim)
-			end if
-		elseif nbbytes>1 then
-			''clear or fill 2/3 bytes
-			asm_code("mov WORD PTR 8["+regdst+"], "+Str(fill2),nooptim)
-			nbbytes-=2
-			if nbbytes>0 then
-				asm_code("mov BYTE PTR 10["+regdst+"], "+Str(fillchar),nooptim)
-			end if
-		elseif nbbytes>0 then
-			 ''clear or fill 1 byte
-			asm_code("mov BYTE PTR 8["+regdst+"], "+Str(fillchar))
+		if nbbytes<>0 then
+			asm_code("add "+regdst+", 8", nooptim)
 		end if
-	elseif nbbytes>3 then
+	end if
+	if nbbytes>3 then
 		''clear 7/6/5/4 bytes
 		asm_code("mov DWORD PTR ["+regdst+"], "+Str(fill4),nooptim)
 		nbbytes-=4
