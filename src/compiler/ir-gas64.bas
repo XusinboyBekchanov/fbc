@@ -2665,7 +2665,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 					asm_code("mov rdi, "+regdst)
 				end if
 
-				if reghandle(KREG_RSI)<>KREGLOCK then
+				if reghandle(KREG_RSI) >=0 then
 					vreg=reghandle(KREG_RSI)
 					tempreg=reg_findfree(vreg)
 					reghandle(KREG_RSI)=KREGLOCK
@@ -2673,7 +2673,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 				end if
 				asm_code("mov rsi, "+Str(fillchar),KNOALL)
 
-				if reghandle(KREG_RDX)<>KREGLOCK then
+				if reghandle(KREG_RDX) >=0 then
 					vreg=reghandle(KREG_RDX)
 					tempreg=reg_findfree(vreg)
 					reghandle(KREG_RDX)=KREGLOCK
