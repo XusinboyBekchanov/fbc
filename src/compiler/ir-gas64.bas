@@ -2570,7 +2570,6 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 		else
 			asm_code("mov "+regdst+", "+dst) ''always mov ???
 		end if
-		''reghandle(rdst)=KREGFREE ''can be reset here as limited use but moved below
 	end if
 
 	if nbbytes<>1 and nbbytes<>2 and nbbytes<>4 and nbbytes<>8 then
@@ -2609,10 +2608,6 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 			if nbbytes <> 0 then
 				asm_code("movdqu XMMWORD PTR "+Str(nbbsav-16)+"["+regdst+"], xmm0", KNOOPTIM)
 			end if
-			if regdst<>dst then
-				reghandle(rdst)=KREGFREE
-				asm_info("hidden 05 freeing register="+*regstrq(rdst))
-			End If
 			exit sub
 		elseif nbbytes<=2048 then
 			'' rep stosq
@@ -2642,10 +2637,6 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 			if nbbytes<>0 then
 				asm_code("add "+regdst+", "+str(nb8*8))
 			else
-				if regdst<>dst then
-					reghandle(rdst)=KREGFREE
-					asm_info("hidden 06 freeing register="+*regstrq(rdst))
-				End If
 				exit sub
 			end if
 		else
@@ -2683,7 +2674,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 
 			else
 				''if rcx, rdx or r8 are used moved to another register
-				if regdst<>*regstrq(KREG_RCX)  then
+				if regdst<>*regstrq(KREG_RCX) then
 					''rcx not the destination
 					if reghandle(KREG_RCX)<>KREGLOCK then
 						''rcx is not free (regallowed forces locked) so moved to another register
@@ -2697,7 +2688,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 
 				if reghandle(KREG_RDX)>=0 then
 					''not KREGFREE neither KREGLOCK, vreg from 0 up to NN
-					''even if locked by regallowed(false) could be freed just above
+					''even if locked by regallowed(false) could be freed just above if mov rcx, rdx
 					vreg=reghandle(KREG_RDX)
 					tempreg=reg_findfree(vreg)
 					reghandle(KREG_RDX)=KREGLOCK
@@ -2717,10 +2708,6 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 			asm_code("call memset")
 
 			reg_allowed(true)
-			if regdst<>dst then
-				reghandle(rdst)=KREGFREE
-				asm_info("hidden 04 freeing register="+*regstrq(rdst))
-			End If
 			exit sub
 
 		End If
@@ -2763,10 +2750,6 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 		asm_code("mov BYTE PTR ["+regdst+"], "+Str(fillchar))
 	end if
 
-	if regdst<>dst then
-		reghandle(rdst)=KREGFREE
-		asm_info("hidden 01 freeing register="+*regstrq(rdst))
-	End If
 end sub
 ''=============================================
 '' MEMCOPY size should be known at compile time
@@ -2805,35 +2788,148 @@ private sub memcopy(byval bytestocopy as Integer,byref src as string, byref dst 
 		end if
 	end if
 
-	nb8=nbbytes\8
+	if nbbytes >15 then
+		if nbbytes<=128 then
+			''SSE
+			dim as integer nb16 = nbbytes \ 16,nbbsav=nbbytes
 
-	''copy by 8 bytes step
-	if nb8>7 then ''greater than 7 times * 8 bytes
-		rnbb=reg_findfree(999996)
-		regnbb=*regstrq(rnbb)
-		reghandle(rnbb)=KREGFREE:asm_info("hidden 02 freeing register="+*regstrq(rnbb))
-		asm_code("mov "+regnbb+", "+Str(nb8))
+			for inb16 as integer = 0 To nb16 - 1
+				'' movdqu = Move Double Quadword Unaligned
+				asm_code("movdqu xmm0, "+Str(inb16*16)+"["+regsrc+"]", KNOOPTIM)
+				asm_code("movdqu XMMWORD PTR "+Str(inb16*16)+"["+regdst+"], xmm0", KNOOPTIM)
+			next
+			nbbytes -= (nb16 * 16)
+			if nbbytes <> 0 then
+				asm_code("movdqu xmm0, "+Str(nbbsav-16)+"["+regsrc+"]", KNOOPTIM)
+				asm_code("movdqu XMMWORD PTR "+Str(nbbsav-16)+"["+regdst+"], xmm0", KNOOPTIM)
+			end if
+			exit sub
+		elseif nbbytes<=2048 then
+				'' rep movsq rcx count/ rsi src / rdi dst
+				dim as integer flagrcx,flagrsi,flagrdi
+				nb8=nbbytes\8
+				if reghandle(KREG_RCX)<>KREGFREE then
+					flagrcx=1
+					asm_code("push rcx",KNOALL)
+				End If
+				if regdst<>*regstrq(KREG_RDI) then
+					if reghandle(KREG_RDI)<>KREGFREE then
+						flagrdi=1
+						asm_code("push rdi",KNOALL)
+					end if
+					asm_code("mov rdi, "+regdst, KNOOPTIM)
+				end if
+				if regsrc<>*regstrq(KREG_RSI) then
+					if reghandle(KREG_RSI)<>KREGFREE then
+						flagrsi=1
+						asm_code("push rsi",KNOALL)
+					end if
+					asm_code("mov rsi, "+regsrc, KNOOPTIM)
+				end if
+				asm_code("mov rcx, "+str(nb8), KNOALL)
+				asm_code("rep movsq")
+				if flagrsi=1 then
+					asm_code("pop rsi")
+				end if
+				if flagrdi=1 then
+					asm_code("pop rdi")
+				end if
+				if flagrcx=1 then
+					asm_code("pop rcx")
+				end if
+				nbbytes-=nb8*8
+				if nbbytes<>0 then
+					asm_code("add "+regdst+", "+str(nb8*8))
+					asm_code("add "+regsrc+", "+str(nb8*8))
+				else
+					exit sub
+				end if
+		else
+			''memcopy
+			dim as integer tempreg,vreg
+			''to avoid the use of rcx/rdi,rdx/rsi and r8/rdx like free registers
+			reg_allowed(false)
+			if ctx.systemv then
+				''if rdi, rsi or rdx are used moved to another register (see below rcx case)
+				if regdst<>*regstrq(KREG_RDI) then
+					if reghandle(KREG_RDI)<>KREGLOCK then
+						vreg=reghandle(KREG_RDI)
+						tempreg=reg_findfree(vreg)
+						reghandle(KREG_RDI)=KREGLOCK
+						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDI))
+					end if
+					asm_code("mov rdi, "+regdst)
+				end if
 
-		lname=*symbUniqueLabel( )
-		asm_code(lname+":")
-		asm_code("mov rax, ["+regsrc+"]")
-		asm_code("mov ["+regdst+"], rax")
-		asm_code("add "+regsrc+", 8")
-		asm_code("add "+regdst+", 8")
-		asm_code("dec "+regnbb)
-		asm_code("jnz "+lname)
-		nbbytes-=nb8*8
-	elseif nb8>0 then ''lesser than 8 times
-		for inb8 as integer = 0 To nb8-1
-			asm_code("mov rax, "+Str(inb8*8)+"["+regsrc+"]")
-			asm_code("mov "+Str(inb8*8)+"["+regdst+"], rax")
-		next
-		nbbytes-=nb8*8
-		if nbbytes<>0 then ''otherwise not usefull
-			asm_code("add "+regsrc+", "+Str(nb8*8))
-			asm_code("add "+regdst+", "+Str(nb8*8))
+				if regsrc<>*regstrq(KREG_RSI) then
+					if reghandle(KREG_RSI) >=0 then
+						vreg=reghandle(KREG_RSI)
+						tempreg=reg_findfree(vreg)
+						reghandle(KREG_RSI)=KREGLOCK
+						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RSI))
+					end if
+					asm_code("mov rsi, "+regsrc)
+				end if
+
+				if reghandle(KREG_RDX)>=0 then
+					vreg=reghandle(KREG_RDX)
+					tempreg=reg_findfree(vreg)
+					reghandle(KREG_RDX)=KREGLOCK
+					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDX))
+				end if
+				asm_code("mov rdx, "+Str(nbbytes),KNOALL)
+
+			else
+				''if rcx, rdx or r8 are used moved to another register
+				if regdst<>*regstrq(KREG_RCX) then
+					''rcx not the destination
+					if reghandle(KREG_RCX)<>KREGLOCK then
+						''rcx is not free (regallowed forces locked) so moved to another register
+						vreg=reghandle(KREG_RCX)
+						tempreg=reg_findfree(vreg)
+						reghandle(KREG_RCX)=KREGLOCK
+						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RCX))
+					end if
+					asm_code("mov rcx, "+regdst)
+				end if
+
+				if regsrc<>*regstrq(KREG_RDX) then
+					if reghandle(KREG_RDX)>=0 then
+						''not KREGFREE neither KREGLOCK, vreg from 0 up to NN
+						''even if locked by regallowed(false) could be freed just above if mov rcx, rdx
+						vreg=reghandle(KREG_RDX)
+						tempreg=reg_findfree(vreg)
+						reghandle(KREG_RDX)=KREGLOCK
+						asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_RDX))
+					end if
+					asm_code("mov rdx, "+regsrc)
+				end if
+
+				if reghandle(KREG_R8)>=0 then
+					vreg=reghandle(KREG_R8)
+					tempreg=reg_findfree(vreg)
+					reghandle(KREG_R8)=KREGLOCK
+					asm_code("mov "+*regstrq(tempreg)+", "+*regstrq(KREG_R8))
+				end if
+				asm_code("mov r8, "+Str(nbbytes),KNOALL)
+			end if
+
+			asm_code("call memcpy")
+
+			reg_allowed(true)
+			exit sub
 		end if
 	end if
+
+	if nbbytes>7 then
+		asm_code("mov rax, ["+regsrc+"]")
+		asm_code("mov ["+regdst+"], rax")
+		nbbytes-=8
+		if nbbytes<>0 then ''otherwise not usefull
+			asm_code("add "+regsrc+", 8",KNOOPTIM)
+			asm_code("add "+regdst+", 8",KNOOPTIM)
+		end if
+	End If
 
 	if nbbytes>3 then
 		''copy 7/6/5/4 bytes
@@ -2866,8 +2962,6 @@ private sub memcopy(byval bytestocopy as Integer,byref src as string, byref dst 
 		asm_code("mov al, BYTE PTR ["+regsrc+"]")
 		asm_code("mov BYTE PTR ["+regdst+"], al")
 	end if
-
-	if regdst<>dst then reghandle(rdst)=KREGFREE :asm_info("hidden 03 freeing register="+*regstrq(rdst))
 
 end sub
 
