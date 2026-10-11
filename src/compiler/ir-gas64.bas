@@ -1483,38 +1483,22 @@ private sub reg_freeable(byref lineasm as string)
 	if regfound11<>-1 then
 		reghandle(regfound11)=KREGFREE
 	else
-		if instruc=KCMP then
-			''already inuse but not to be used later except one case (at least) when null-pointer checking
-			ctx.jmpreg=regfound12 ''see their defines
-			ctx.jmpvreg=reghandle(regfound12)
-			ctx.jmppass=2
-			reghandle(regfound12)=KREGFREE
-		elseif instruc=KDIV then
-			reghandle(regfound12)=KREGFREE
-		elseif instruc=KPUSH then
-			if regfound12<>-1 then
+		select case as const instruc
+			case KCMP
+				''already inuse but not to be used later except one case (at least) when null-pointer checking
+				ctx.jmpreg=regfound12 ''see their defines
+				ctx.jmpvreg=reghandle(regfound12)
+				ctx.jmppass=2
 				reghandle(regfound12)=KREGFREE
-			end if
-		elseif instruc=KCALL then
-			if regfound11<>-1 then
-				reghandle(regfound11)=KREGFREE ''call [reg]
-			end if
-			if regfound12<>-1 then
-				reghandle(regfound12)=KREGFREE ''call reg
-			end if
-		elseif instruc=KJMP then
-			if regfound12<>-1 then
+			case KDIV,KPUSH,KCALL,KJMP
 				reghandle(regfound12)=KREGFREE
-			elseif regfound11<>-1 then
-				reghandle(regfound11)=KREGFREE
-			End If
-		elseif regfound12=regfound22 then
-			if regfound12<>-1 then
-				if instruc<>KADD then 'in multiplication optim ("add "+op1+", "+op1)
-					reghandle(regfound12)=KREGFREE
+			case else
+				if regfound12=regfound22 andalso regfound12<>-1 then
+					if instruc<>KADD then 'in multiplication optim ("add "+op1+", "+op1)
+						reghandle(regfound12)=KREGFREE
+					end if
 				end if
-			end if
-		End If
+		end select
 	End If
 
 	if regfound21<>-1 then
