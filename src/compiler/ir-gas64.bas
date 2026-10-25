@@ -1176,53 +1176,53 @@ private sub reg_freeable(byref lineasm as string)
 			end if
 		End If
 
-		if instruc=KMOV then ''mov can have 3 operands even 2 identical
-			search(asc("+"))
-			if ichar <> -1 then
-				schptrb+=ichar
-				schptrl=cast(long ptr,schptrb)
-				if *schptrl=cvl("+rbp") then
-					regfound3=KREG_RIP ''rbp just a trick
-				elseif *schptrl=cvl("+r11") then
-					regfound3=KREG_R11
-				elseif *schptrl=cvl("+r10") then
-					regfound3=KREG_R10
-				elseif *schptrl=cvl("+rax") then
-					regfound3=KREG_RAX
-				elseif *schptrl=cvl("+r12") then
-					regfound3=KREG_R12
-				elseif *schptrl=cvl("+r13") then
-					regfound3=KREG_R13
-				elseif *schptrl=cvl("+r14") then
-					regfound3=KREG_R14
-				elseif *schptrl=cvl("+r15") then
-					regfound3=KREG_R15
-				elseif *schptrl=cvl("+rbx") then
-					regfound3=KREG_RBX
-				elseif *schptrl=cvl("+rcx") then
-					regfound3=KREG_RCX
-				elseif *schptrl=cvl("+rdx") then
-					regfound3=KREG_RDX
-				elseif *schptrl=cvl("+rsi") then
-					regfound3=KREG_RSI
-				elseif *schptrl=cvl("+rdi") then
-					regfound3=KREG_RDI
-				elseif *schptrl=cvl("+rsp") then
-					regfound3=KREG_RIP ''rsp just a trick
-				elseif *schptrl=cvl("+rip") then
-					regfound3=KREG_RIP
-				else
-					bptr=schptrb
-					bptr+=1
-					schptrs=cast(short ptr,bptr)
-					if *schptrs=cvshort("r8") then
-						regfound3=KREG_R8
-					elseif *schptrs=cvshort("r9") then
-						regfound3=KREG_R9
-					end if
+		'' some instructions can have 3 operands even 2 identical (eg mov, lea, add,...)
+		search(asc("+"))
+		if ichar <> -1 then
+			schptrb+=ichar
+			schptrl=cast(long ptr,schptrb)
+			if *schptrl=cvl("+rbp") then
+				regfound3=KREG_RIP ''rbp just a trick
+			elseif *schptrl=cvl("+r11") then
+				regfound3=KREG_R11
+			elseif *schptrl=cvl("+r10") then
+				regfound3=KREG_R10
+			elseif *schptrl=cvl("+rax") then
+				regfound3=KREG_RAX
+			elseif *schptrl=cvl("+r12") then
+				regfound3=KREG_R12
+			elseif *schptrl=cvl("+r13") then
+				regfound3=KREG_R13
+			elseif *schptrl=cvl("+r14") then
+				regfound3=KREG_R14
+			elseif *schptrl=cvl("+r15") then
+				regfound3=KREG_R15
+			elseif *schptrl=cvl("+rbx") then
+				regfound3=KREG_RBX
+			elseif *schptrl=cvl("+rcx") then
+				regfound3=KREG_RCX
+			elseif *schptrl=cvl("+rdx") then
+				regfound3=KREG_RDX
+			elseif *schptrl=cvl("+rsi") then
+				regfound3=KREG_RSI
+			elseif *schptrl=cvl("+rdi") then
+				regfound3=KREG_RDI
+			elseif *schptrl=cvl("+rsp") then
+				regfound3=KREG_RIP ''rsp just a trick
+			elseif *schptrl=cvl("+rip") then
+				regfound3=KREG_RIP
+			else
+				bptr=schptrb
+				bptr+=1
+				schptrs=cast(short ptr,bptr)
+				if *schptrs=cvshort("r8") then
+					regfound3=KREG_R8
+				elseif *schptrs=cvshort("r9") then
+					regfound3=KREG_R9
 				end if
-			End If
+			end if
 		End If
+		'End If
 
 	else ''lower case
 		schptrb-=1 ''searching including space before operand
@@ -1353,52 +1353,50 @@ private sub reg_freeable(byref lineasm as string)
 					end if
 				end if
 
-				if instruc=KLEA or instruc=KMOV then ''lea/mov can have 3 operands even 2 identical
-					search(asc("+"))
-					if ichar <> -1 then
-						schptrb+=ichar
-						schptrl=cast(long ptr,schptrb)
-						if *schptrl=cvl("+rbp") then
-							regfound3=KREG_RIP ''rbp just a trick
-						elseif *schptrl=cvl("+r11") then
-							regfound3=KREG_R11
-						elseif *schptrl=cvl("+r10") then
-							regfound3=KREG_R10
-						elseif *schptrl=cvl("+rax") then
-							regfound3=KREG_RAX
-						elseif *schptrl=cvl("+r12") then
-							regfound3=KREG_R12
-						elseif *schptrl=cvl("+r13") then
-							regfound3=KREG_R13
-						elseif *schptrl=cvl("+r14") then
-							regfound3=KREG_R14
-						elseif *schptrl=cvl("+r15") then
-							regfound3=KREG_R15
-						elseif *schptrl=cvl("+rbx") then
-							regfound3=KREG_RBX
-						elseif *schptrl=cvl("+rcx") then
-							regfound3=KREG_RCX
-						elseif *schptrl=cvl("+rdx") then
-							regfound3=KREG_RDX
-						elseif *schptrl=cvl("+rsi") then
-							regfound3=KREG_RSI
-						elseif *schptrl=cvl("+rdi") then
-							regfound3=KREG_RDI
-						elseif *schptrl=cvl("+rsp") then
-							regfound3=KREG_RIP ''rsp just a trick
-						elseif *schptrl=cvl("+rip") then
-							regfound3=KREG_RIP
-						else
-							bptr=schptrb
-							bptr+=1
-							schptrs=cast(short ptr,bptr)
-							if *schptrs=cvshort("r8") then
-								regfound3=KREG_R8
-							elseif *schptrs=cvshort("r9") then
-								regfound3=KREG_R9
-							end if
+				search(asc("+"))
+				if ichar <> -1 then
+					schptrb+=ichar
+					schptrl=cast(long ptr,schptrb)
+					if *schptrl=cvl("+rbp") then
+						regfound3=KREG_RIP ''rbp just a trick
+					elseif *schptrl=cvl("+r11") then
+						regfound3=KREG_R11
+					elseif *schptrl=cvl("+r10") then
+						regfound3=KREG_R10
+					elseif *schptrl=cvl("+rax") then
+						regfound3=KREG_RAX
+					elseif *schptrl=cvl("+r12") then
+						regfound3=KREG_R12
+					elseif *schptrl=cvl("+r13") then
+						regfound3=KREG_R13
+					elseif *schptrl=cvl("+r14") then
+						regfound3=KREG_R14
+					elseif *schptrl=cvl("+r15") then
+						regfound3=KREG_R15
+					elseif *schptrl=cvl("+rbx") then
+						regfound3=KREG_RBX
+					elseif *schptrl=cvl("+rcx") then
+						regfound3=KREG_RCX
+					elseif *schptrl=cvl("+rdx") then
+						regfound3=KREG_RDX
+					elseif *schptrl=cvl("+rsi") then
+						regfound3=KREG_RSI
+					elseif *schptrl=cvl("+rdi") then
+						regfound3=KREG_RDI
+					elseif *schptrl=cvl("+rsp") then
+						regfound3=KREG_RIP ''rsp just a trick
+					elseif *schptrl=cvl("+rip") then
+						regfound3=KREG_RIP
+					else
+						bptr=schptrb
+						bptr+=1
+						schptrs=cast(short ptr,bptr)
+						if *schptrs=cvshort("r8") then
+							regfound3=KREG_R8
+						elseif *schptrs=cvshort("r9") then
+							regfound3=KREG_R9
 						end if
-					End If
+					end if
 				End If
 			End If
 				'===================
@@ -2552,7 +2550,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 		if dtyp=KUSE_LEA then
 			asm_code("lea "+regdst+", "+dst)
 		else
-			asm_code("mov "+regdst+", "+dst) ''always mov ???
+			asm_code("mov "+regdst+", "+dst)
 		end if
 	end if
 
