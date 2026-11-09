@@ -117,6 +117,7 @@ Version 1.20.0
 - gas64: peephole optimizer emitted invalid 'movd xmm, xmm' (assembler error "operand type mismatch for `movd'") when a SINGLE variable stored from an xmm register was loaded back into another xmm register, e.g. 'x = f() * 1.3 : if x > y then ...'
 - fbc: libgcc was linked before the object files, leaving helpers such as __addtf3 (aarch64 long double) undefined
 - fbc: wstring constant names were sized with the host wchar size instead of the target's, overflowing when cross compiling from Windows to Android/Linux
+- rtlib: unix: PRINT of a wstring to redirected/piped stdout wrote raw wchar_t instead of UTF-8
 
 
 Version 1.10.3
