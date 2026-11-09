@@ -5979,23 +5979,34 @@ private sub _emitconvert( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 					asm_code("movsd xmm0, "+op2)
 				end if
 
-				hEmitRoundFloat(FB_DATATYPE_DOUBLE)
-
-				if v1dtype=FB_DATATYPE_LONGINT then
-					asm_code("mov "+op1+", rax")
-				elseif v1dtype=FB_DATATYPE_LONG Or v1dtype=FB_DATATYPE_ULONG then
-					asm_code("mov "+op1+", eax")
-				elseif v1dtype=FB_DATATYPE_SHORT Or v1dtype=FB_DATATYPE_USHORT then
-					asm_code("mov "+op1+", ax")
-				else
-					if v1dtype=FB_DATATYPE_BOOLEAN then
-						asm_info("Double to boolean, <>0 --> 1")
-						asm_code("cmp rax, 0")
-						asm_code("setne al",KNOFREE)
-						'asm_code("neg al")
+				if v1dtype=FB_DATATYPE_BOOLEAN then
+					dim as integer rcxpushed
+					if reghandle(KREG_RCX)<>KREGFREE then
+						asm_code("push rcx",KNOALL)
+						rcxpushed=1
+					end if
+					asm_code("pxor xmm1, xmm1")
+					asm_code("ucomisd xmm0, xmm1")
+					asm_info("double to boolean, <>0 --> 1")
+					asm_code("setne al")
+					asm_code("setp cl") ''necessary to handle undefined values
+					asm_code("or al, cl",KNOALL)
+					if rcxpushed then
+						asm_code("pop rcx",KNOALL)
 					end if
 					asm_code("mov "+op1+", al")
-				end if
+				else
+					hEmitRoundFloat(FB_DATATYPE_DOUBLE)
+					if v1dtype=FB_DATATYPE_LONGINT then
+						asm_code("mov "+op1+", rax")
+					elseif v1dtype=FB_DATATYPE_LONG Or v1dtype=FB_DATATYPE_ULONG then
+						asm_code("mov "+op1+", eax")
+					elseif v1dtype=FB_DATATYPE_SHORT Or v1dtype=FB_DATATYPE_USHORT then
+						asm_code("mov "+op1+", ax")
+					else
+						asm_code("mov "+op1+", al")
+					end if
+				End If
 			else
 				asm_error("Converting float to int 01")
 			end if
@@ -6041,23 +6052,34 @@ private sub _emitconvert( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 					asm_code("movss xmm0, "+op2)
 				end if
 
-				hEmitRoundFloat(FB_DATATYPE_SINGLE)
-
-				if v1dtype=FB_DATATYPE_LONGINT then
-					asm_code("mov "+op1+", rax")
-				elseif v1dtype=FB_DATATYPE_LONG Or v1dtype=FB_DATATYPE_ULONG then
-					asm_code("mov "+op1+", eax")
-				elseif v1dtype=FB_DATATYPE_SHORT Or v1dtype=FB_DATATYPE_USHORT then
-					asm_code("mov "+op1+", ax")
-				else
-					if v1dtype=FB_DATATYPE_BOOLEAN then
-						asm_info("Single to boolean, <>0 --> 1")
-						asm_code("cmp rax, 0")
-						asm_code("setne al",KNOFREE)
-						'asm_code("neg al")
+				if v1dtype=FB_DATATYPE_BOOLEAN then
+					dim as integer rcxpushed
+					if reghandle(KREG_RCX)<>KREGFREE then
+						asm_code("push rcx",KNOALL)
+						rcxpushed=1
+					end if
+					asm_code("pxor xmm1, xmm1")
+					asm_code("ucomiss xmm0, xmm1")
+					asm_info("Single to boolean, <>0 --> 1")
+					asm_code("setne al")
+					asm_code("setp cl") ''necessary to handle undefined values
+					asm_code("or al, cl",KNOALL)
+					if rcxpushed then
+						asm_code("pop rcx",KNOALL)
 					end if
 					asm_code("mov "+op1+", al")
-				end if
+				else
+					hEmitRoundFloat(FB_DATATYPE_SINGLE)
+					if v1dtype=FB_DATATYPE_LONGINT then
+						asm_code("mov "+op1+", rax")
+					elseif v1dtype=FB_DATATYPE_LONG Or v1dtype=FB_DATATYPE_ULONG then
+						asm_code("mov "+op1+", eax")
+					elseif v1dtype=FB_DATATYPE_SHORT Or v1dtype=FB_DATATYPE_USHORT then
+						asm_code("mov "+op1+", ax")
+					else
+						asm_code("mov "+op1+", al")
+					end if
+				End If
 			else
 				asm_error("Converting float to int 02")
 			end if
