@@ -76,6 +76,7 @@ Version 1.20.0
 - sf.net #1013 : NEW uses callocate instead allocate + memset(0) as it's faster (SARG)
 - sf.net #1013 (gas64) : memfill calls MEMSET if area size is greater than 64 bytes as it's faster (SARG)
 - fbc: new syntax 'end while' equivalent to 'wend'. wend syntax remains valid (SARG)
+- rtlib: iOS (iPhone, iPad and the iOS Simulator): HOST_IOS when TARGET_OS_IPHONE, the runtime builds with the SDK of iOS without termcap/ncurses and libffi; SHELL returns -1 since iOS has no system()
 
 [fixed]
 - github #410: give consistent floating point comparisons results involving NaNs.
@@ -119,6 +120,9 @@ Version 1.20.0
 - fbc: libgcc was linked before the object files, leaving helpers such as __addtf3 (aarch64 long double) undefined
 - fbc: wstring constant names were sized with the host wchar size instead of the target's, overflowing when cross compiling from Windows to Android/Linux
 - rtlib: unix: PRINT of a wstring to redirected/piped stdout wrote raw wchar_t instead of UTF-8
+- rtlib: darwin: the cycle profiler (-profile) used the __start_/__stop_ section symbols of ELF, Mach-O uses section$start$/section$end$
+- rtlib: darwin: THREADCREATE without a stack size took the tiny minimum of darwin, it takes at least 8 MB now
+- makefile: darwin: ffi.h is taken from usr/include/ffi of the SDK of macOS (there is no /usr/include), and the rtlib is built for the same minimum macOS version as fbc gives to the programs (MACOSX_DEPLOYMENT_TARGET, 11.0 by default)
 
 
 Version 1.10.3
