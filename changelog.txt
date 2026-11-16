@@ -78,6 +78,7 @@ Version 1.20.0
 - fbc: new syntax 'end while' equivalent to 'wend'. wend syntax remains valid (SARG)
 - rtlib: iOS (iPhone, iPad and the iOS Simulator): HOST_IOS when TARGET_OS_IPHONE, the runtime builds with the SDK of iOS without termcap/ncurses and libffi; SHELL returns -1 since iOS has no system()
 - fbc: darwin: #inclib "framework:Name" links with -framework Name (Cocoa, UIKit, ...)
+- gas64: darwin-x86_64 (Mach-O, the assembler of clang): __DATA sections, __mod_init_func/__mod_term_func for the constructors/destructors (Mach-O has no priorities, they run in the order of the modules), .balign, power-of-two alignment of .comm/.lcomm, the underscore prefix of the C functions, no @PLT, the System V ABI (UDT results in registers like linux), 8/16-bit arguments extended to 32 bits (clang's callees expect it), inline asm '[var]' and 'offset sym[rip]' written for clang; '-gen gas64' keeps the intel syntax on darwin
 
 [fixed]
 - github #410: give consistent floating point comparisons results involving NaNs.
@@ -127,6 +128,7 @@ Version 1.20.0
 - fbc: darwin: link with the SDK of macOS (-syslibroot from SDKROOT or xcrun) and -arch arm64 for aarch64; the obsolete -macosx_version_min 10.4 is replaced by one minimum version (MACOSX_DEPLOYMENT_TARGET, 11.0 by default) given to gcc/clang, as and ld (a different one gave a warning of ld for each object)
 - fbc: darwin: no crt objects and no libgcc are linked, the startup code and the runtime of clang are in libSystem
 - fbc: darwin: -dll links with -dylib -install_name and -export with -export_dynamic of the ld of Apple
+- gas64: the internal symbols $mxcsr, $sse41 and $sse41_test are named fb_gas64_mxcsr, fb_gas64_sse41 and fb_gas64_sse41_test ($ starts an immediate value for the assembler of clang)
 
 
 Version 1.10.3

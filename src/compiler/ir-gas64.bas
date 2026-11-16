@@ -1484,7 +1484,24 @@ end function
 private sub asm_section(byref section as string)
 	static section_current as string
 	if section_current<>section then
-		asm_code(".section "+section)
+		if ctx.target=FB_COMPTARGET_DARWIN then
+			if section=".text" orelse section=".data" then
+				asm_code(section)
+			elseif section=".bss" then
+				asm_code(".data")
+			elseif left(section,6)=".ctors" orelse section=".init_array" then
+				asm_code(".section __DATA,__mod_init_func,mod_init_funcs")
+			elseif left(section,6)=".dtors" orelse section=".fini_array" then
+				asm_code(".section __DATA,__mod_term_func,mod_term_funcs")
+			else
+				'' Mach-O section names have no leading dot (objinfo reads __DATA,fbctinf like the C backend gives)
+				dim as string secname=left(section,instr(section+",",",")-1)
+				if left(secname,1)="." then secname=mid(secname,2)
+				asm_code(".section __DATA,"+secname)
+			end if
+		else
+			asm_code(".section "+section)
+		end if
 		section_current=section
 	end if
 end sub
@@ -1504,6 +1521,14 @@ sub dbg_filename(byref filename as string)
 end sub
 private sub hwriteasm64( byref ln2 as string, byval opt as integer=KDOALL)
 dim as string lname, ln=ln2
+if ctx.target=FB_COMPTARGET_DARWIN then
+	'' clang's assembler rejects a unary plus in Intel syntax
+	dim as integer plusidx=instr(ln,", +")
+	if plusidx>0 then ln=left(ln,plusidx+1)+mid(ln,plusidx+3)
+	'' and 'offset' with a RIP-relative address (inline asm 'lea rax, offset sym[rip]'), which is the same address
+	dim as integer offsetidx=instr(lcase(ln),"offset ")
+	if offsetidx>0 andalso instr(offsetidx,ln,"[rip")>0 then ln=left(ln,offsetidx-1)+mid(ln,offsetidx+7)
+end if
 #ifdef __GAS64_DEBUG__
 	if ln[0]=asc("#") then
 		ln="           "+ln
@@ -2582,7 +2607,7 @@ private sub memfill(byval bytestofill as Integer,byref dst as string,byval dtyp 
 				asm_code("mov r8, "+Str(nbbytes),KNOALL)
 
 			end if
-			asm_code("call memset")
+			asm_code(iif(env.underscoreprefix,"call _memset","call memset"))
 
 			reg_allowed(true)
 			exit sub
@@ -2847,7 +2872,7 @@ private sub hemitvariable( byval sym as FBSYMBOL ptr )
 		select case( symbGetType( sym ) )
 			case FB_DATATYPE_CHAR, FB_DATATYPE_WCHAR
 				asm_section(".data")
-				asm_code(".align 8")
+				asm_code(".balign 8")
 				if symbIsPublic( sym ) then
 					asm_code(".globl "+*symbGetMangledName( sym ))
 				end if
@@ -2968,10 +2993,16 @@ private sub hemitvariable( byval sym as FBSYMBOL ptr )
 		'if symbIsPublic( sym ) then
 		'    asm_info("Not for variable report please : .globl "+*symbGetMangledName( sym ))
 		'end if
+		dim as integer log2align=0
+		while (1 shl log2align)<align
+			log2align+=1
+		wend
 		if (symbIsCommon(sym)) or ( symbIsPublic( sym ) ) then
-			asm_code(".comm "+*symbGetMangledName( sym )+","+Str(length)+","+Str(align))
+			asm_code(".comm "+*symbGetMangledName( sym )+","+Str(length)+","+Str(iif(ctx.target=FB_COMPTARGET_DARWIN,log2align,align)))
 		else
-			if ctx.systemv then
+			if ctx.target=FB_COMPTARGET_DARWIN then
+				asm_code(".lcomm "+*symbGetMangledName( sym )+","+Str(length)+","+Str(log2align))
+			elseif ctx.systemv then
 				''lcomm without aligment in linux
 				asm_code(".local "+*symbGetMangledName( sym ))
 				asm_code(".comm "+*symbGetMangledName( sym )+","+Str(length)+","+Str(align))
@@ -2992,13 +3023,13 @@ private sub hmaybeemitglobalvar( byval sym as FBSYMBOL ptr )
 end sub
 private sub no_roundsd(byval size as zstring ptr)
 	''when the CPU doesn't provide roundsd/roundss (needs see41)
-	asm_code("stmxcsr $mxcsr[rip]",KNOFREE)
-	asm_code("push $mxcsr[rip]",KNOFREE)
-	asm_code("and DWORD PTR $mxcsr[rip], 0xFFFF9FFF",KNOFREE)
-	asm_code("ldmxcsr $mxcsr[rip]",KNOFREE)
+	asm_code("stmxcsr fb_gas64_mxcsr[rip]",KNOFREE)
+	asm_code("push QWORD PTR fb_gas64_mxcsr[rip]",KNOFREE)
+	asm_code("and DWORD PTR fb_gas64_mxcsr[rip], 0xFFFF9FFF",KNOFREE)
+	asm_code("ldmxcsr fb_gas64_mxcsr[rip]",KNOFREE)
 	asm_code("cvts"+*size+"2si rax, xmm0",KNOFREE)
-	asm_code("pop $mxcsr[rip]",KNOFREE)
-	asm_code("ldmxcsr $mxcsr[rip]",KNOFREE)
+	asm_code("pop QWORD PTR fb_gas64_mxcsr[rip]",KNOFREE)
+	asm_code("ldmxcsr fb_gas64_mxcsr[rip]",KNOFREE)
 end sub
 
 ''=================== profiling ==============================================
@@ -3007,20 +3038,24 @@ private sub hProfileEmitSections()
 	dim as integer previous_section = ctx.section
 
 	ctx.section = SECTION_PROFILE_STRINGS
-	if ctx.systemv then
+	if ctx.target=FB_COMPTARGET_DARWIN then
+		asm_code(".section __DATA,fb_profstrs")
+	elseif ctx.systemv then
 		asm_code(".section "+FB_PROFILE_SECT_STRS+",""a""")
 	else
 		asm_code(".section "+FB_PROFILE_SECT_STRS+",""dr""")
 	end if
-	asm_code(".align 16")
+	asm_code(".balign 16")
 
 	ctx.section = SECTION_PROFILE_DATA
-	if ctx.systemv then
+	if ctx.target=FB_COMPTARGET_DARWIN then
+		asm_code(".section __DATA,fb_profcycle")
+	elseif ctx.systemv then
 		asm_code(".section "+FB_PROFILE_SECT_DATA+",""a""")
 	else
 		asm_code(".section "+FB_PROFILE_SECT_DATA+",""dw""")
 	end if
-	asm_code(".align 16")
+	asm_code(".balign 16")
 
 	ctx.section = previous_section
 end sub
@@ -3150,7 +3185,7 @@ private function _emitbegin( ) as integer
 	ctx.roundfloat=false
 	ctx.target=fbgetoption(FB_COMPOPT_TARGET) ''linux or windows
 	select case ctx.target
-	case FB_COMPTARGET_LINUX, FB_COMPTARGET_FREEBSD
+	case FB_COMPTARGET_LINUX, FB_COMPTARGET_FREEBSD, FB_COMPTARGET_DARWIN
 		ctx.systemv = true
 	case else
 		ctx.systemv = false
@@ -3221,7 +3256,7 @@ private sub hAddGlobalCtorDtor( byval proc as FBSYMBOL ptr )
 					asm_section(".ctors."+str(65535-symbGetProcPriority( proc )))
 				end if
 			end if
-			asm_code(".align 8")
+			asm_code(".balign 8")
 			asm_code(".quad "+*symbGetMangledName( proc ))
 			asm_section(".text")
 		end if
@@ -3237,7 +3272,7 @@ private sub hAddGlobalCtorDtor( byval proc as FBSYMBOL ptr )
 					asm_section(".dtors."+str(65535-symbGetProcPriority( proc )))
 			end if
 		end if
-		asm_code(".align 8")
+		asm_code(".balign 8")
 		asm_code(".quad "+*symbGetMangledName( proc ))
 		asm_section(".text")
 	end if
@@ -3258,14 +3293,17 @@ private sub _emitend( )
 		'ctx.section = SECTION_HEAD
 		asm_section(".bss")
 		''as float rounding is used needs global variables
-		if ctx.systemv then
-			asm_code(".local $mxcsr")
-			asm_code(".comm $mxcsr,8,8")
-			asm_code(".local $sse41")
-			asm_code(".comm $sse41,4,8")
+		if ctx.target=FB_COMPTARGET_DARWIN then
+			asm_code(".lcomm fb_gas64_mxcsr,8,3")
+			asm_code(".lcomm fb_gas64_sse41,4,3")
+		elseif ctx.systemv then
+			asm_code(".local fb_gas64_mxcsr")
+			asm_code(".comm fb_gas64_mxcsr,8,8")
+			asm_code(".local fb_gas64_sse41")
+			asm_code(".comm fb_gas64_sse41,4,8")
 		else
-			asm_code(".lcomm $mxcsr,8,8")
-			asm_code(".lcomm $sse41,4,8")
+			asm_code(".lcomm fb_gas64_mxcsr,8,8")
+			asm_code(".lcomm fb_gas64_sse41,4,8")
 		end if
 
 		''must be executed before the constructors and main
@@ -3274,19 +3312,19 @@ private sub _emitend( )
 		else
 			asm_section(".ctors")
 		end if
-		asm_code(".align 8")
-		asm_code(".quad $sse41_test")
+		asm_code(".balign 8")
+		asm_code(".quad fb_gas64_sse41_test")
 
 		asm_section(".text")
 		''is the processor having SSE4_1 feature ?
-		asm_code("$sse41_test:")
+		asm_code("fb_gas64_sse41_test:")
 		asm_code("push rbx",KNOFREE)
 		asm_code("push rcx",KNOFREE)
 		asm_code("push rdx",KNOFREE)
 		asm_code("mov  eax, 1",KNOFREE)
 		asm_code("cpuid",KNOFREE)
 		asm_code("and ecx, 0b10000000000000000000",KNOFREE)
-		asm_code("mov $sse41[rip], ecx",KNOFREE)
+		asm_code("mov fb_gas64_sse41[rip], ecx",KNOFREE)
 		asm_code("pop rdx",KNOFREE)
 		asm_code("pop rcx",KNOFREE)
 		asm_code("pop rbx",KNOFREE)
@@ -3301,7 +3339,7 @@ private sub _emitend( )
 	if( env.clopt.debuginfo = true ) then
 		dim as string lname = *symbUniqueLabel( )
 		dbg_addstab(,STAB_TYPE_SO,,lname)
-		asm_code(".text")
+		asm_section(".text")
 		asm_code(lname+":")
 		dbg_emitstab()
 		dbg_emitstr()
@@ -5373,9 +5411,9 @@ private sub _emituop(byval op as integer,byval v1 as IRVREG ptr,byval vr as IRVR
 end sub
 private sub hEmitRoundFloat(byval dtype1 as FB_DATATYPE,byval dtype2 as FB_DATATYPE = FB_DATATYPE_INVALID)
 	dim as string lname1,lname2
-	'' Puts ctx.roundfloat to true for later adding of the code filling $sse41[rip]
+	'' Puts ctx.roundfloat to true for later adding of the code filling fb_gas64_sse41[rip]
 	ctx.roundfloat=true
-	asm_code("test DWORD PTR $sse41[rip], 0b10000000000000000000")
+	asm_code("test DWORD PTR fb_gas64_sse41[rip], 0b10000000000000000000")
 	lname1 = *symbUniqueLabel( )
 	asm_code("je "+lname1)
 
@@ -5400,14 +5438,14 @@ private sub hEmitRoundFloat(byval dtype1 as FB_DATATYPE,byval dtype2 as FB_DATAT
 		if dtype2<>FB_DATATYPE_ULONGINT then
 			no_roundsd(@"d")
 		else
-			asm_code("call nearbyint")
+			asm_code(iif(env.underscoreprefix,"call _nearbyint","call nearbyint"))
 		end if
 	else
 	''single
 		if dtype2<>FB_DATATYPE_ULONGINT then
 			no_roundsd(@"s")
 		else
-			asm_code("call nearbyintf")
+			asm_code(iif(env.underscoreprefix,"call _nearbyintf","call nearbyintf"))
 		end if
 	endif
 
@@ -6596,9 +6634,9 @@ sub save_call(byref func as string,byval vr as IRVREG ptr,byval vrreg as integer
 	end if
 
 	if ctx.systemv=true andalso fbGetOption( FB_COMPOPT_OUTTYPE ) = FB_OUTTYPE_DYNAMICLIB then
-		asm_code("call "+func+"@PLT")
+		asm_code("call "+iif(env.underscoreprefix,"_","")+func+iif(ctx.target=FB_COMPTARGET_DARWIN,"","@PLT"))
 	else
-		asm_code("call "+func)
+		asm_code("call "+iif(env.underscoreprefix,"_","")+func)
 	end if
 
 	if vr<>0 then reghandle(vrreg)=vr->reg
@@ -7092,9 +7130,18 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 							case FB_DATATYPE_LONG,FB_DATATYPE_ULONG
 								asm_code("mov "+*regstrd(listreg(cptint))+", "+op1)
 							case FB_DATATYPE_SHORT,FB_DATATYPE_USHORT
-								asm_code("mov "+*regstrw(listreg(cptint))+", "+op1)
+								if ctx.target=FB_COMPTARGET_DARWIN then
+									'' darwin: the callee (clang) expects 8/16-bit arguments extended to 32 bits by the caller
+									asm_code(iif(dtype=FB_DATATYPE_SHORT,"movsx ","movzx ")+*regstrd(listreg(cptint))+", "+iif(v2->typ=IR_VREGTYPE_REG,"","WORD PTR ")+op1)
+								else
+									asm_code("mov "+*regstrw(listreg(cptint))+", "+op1)
+								end if
 							case FB_DATATYPE_BYTE,FB_DATATYPE_UBYTE,FB_DATATYPE_BOOLEAN,FB_DATATYPE_CHAR
-								asm_code("mov "+*regstrb(listreg(cptint))+", "+op1)
+								if ctx.target=FB_COMPTARGET_DARWIN then
+									asm_code(iif(dtype=FB_DATATYPE_BYTE,"movsx ","movzx ")+*regstrd(listreg(cptint))+", "+iif(v2->typ=IR_VREGTYPE_REG,"","BYTE PTR ")+op1)
+								else
+									asm_code("mov "+*regstrb(listreg(cptint))+", "+op1)
+								end if
 							case else
 								asm_error("in hdocall datatype not handled 03 ="+typedumpToStr(dtype,0))
 						end select
@@ -7415,7 +7462,7 @@ private sub _emitjmptb _
 		asm_code("lea "+*regstrq(regtempo)+", "+lname+"[rip]")
 		asm_code("jmp QWORD PTR [rax*8+"+*regstrq(regtempo)+"]")
 		asm_section(".data")
-		asm_code(".align 8")
+		asm_code(".balign 8")
 		asm_code(lname+":")
 		for isel as integer = 0 to span
 			''asm_info("values="+str(isel)+" "+str(idx)+" "+str(values[idx]))
@@ -7553,7 +7600,7 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 					End If
 				end if
 
-				asm_code("call memset")
+				asm_code(iif(env.underscoreprefix,"call _memset","call memset"))
 
 				reg_allowed(true)
 
@@ -7756,8 +7803,17 @@ private sub _emitasmline( byval asmtokenhead as ASTASMTOK ptr )
 			case AST_ASMTOK_SYMB
 
 				Var ofs = symbGetOfs( n->sym )
+				'' darwin: clang's assembler rejects the nested brackets of [-8[rbp]] (inline asm "[a]"),
+				'' inside brackets the address is [rbp-8] or [rip+symbol] (64-bit: no absolute address)
+				dim as integer inbrackets = (ctx.target=FB_COMPTARGET_DARWIN) andalso (right(rtrim(asmline),1)="[")
 				if( ofs <> 0 ) then
-					asmline+= str( ofs )+"[rbp]"
+					if inbrackets then
+						asmline+= "rbp"+iif(ofs<0,str(ofs),"+"+str(ofs))
+					else
+						asmline+= str( ofs )+"[rbp]"
+					end if
+				elseif inbrackets then
+					asmline+= "rip+"+*symbGetMangledName( n->sym )
 				else
 					asmline+= *symbGetMangledName( n->sym )'*symbGetMangledName( n->sym )
 				end if
@@ -7790,7 +7846,7 @@ private sub _emitvarinibegin( byval sym as FBSYMBOL ptr )
 	if symbIsPublic( sym ) then
 		asm_code(".globl "+*symbGetMangledName( sym ))
 	end if
-	asm_code(".align "+Str(align))
+	asm_code(".balign "+Str(align))
 	asm_code(*symbGetMangledName( sym )+":")
 	if( symbIsExtern( sym ) or symbIsDynamic( sym ) ) then
 	else
@@ -7901,7 +7957,7 @@ private sub _emitprocbegin(byval proc as FBSYMBOL ptr,byval initlabel as FBSYMBO
 		end if
 	end if
 
-	asm_code(".text")
+	asm_section(".text")
 	if symbisprivate(proc)=FALSE then
 		asm_code(".globl "+*symbGetMangledName( proc ))
 	end if
@@ -8088,7 +8144,7 @@ private sub _emitvarinistr(byval varlength as longint,byval literal as zstring p
 	dim as const zstring ptr s
 	DIM AS INTEGER fillvalue
 	asm_info("emitVarIniStr="+*literal)
-	'asm_code(".align 8")
+	'asm_code(".balign 8")
 	if varlength=0 then
 		asm_code(".byte 0 # 0")
 		exit sub
@@ -8118,7 +8174,7 @@ private sub _emitVarIniWstr (byval totlgt as longint,byval litstr as wstring ptr
 	dim as string ostr
 	dim as integer wclen=typeGetSize( FB_DATATYPE_WCHAR )
 	asm_info("MYWSTR="+str(litlgt))
-	'asm_code(".align 8")
+	'asm_code(".balign 8")
 	if( totlgt = 0 ) then
 		if wclen=2 then
 			asm_code(".word "+str(0))
