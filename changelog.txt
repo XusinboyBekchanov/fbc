@@ -129,6 +129,7 @@ Version 1.20.0
 - fbc: darwin: no crt objects and no libgcc are linked, the startup code and the runtime of clang are in libSystem
 - fbc: darwin: -dll links with -dylib -install_name and -export with -export_dynamic of the ld of Apple
 - gas64: the internal symbols $mxcsr, $sse41 and $sse41_test are named fb_gas64_mxcsr, fb_gas64_sse41 and fb_gas64_sse41_test ($ starts an immediate value for the assembler of clang)
+- tests: cpp: darwin links the C++ library libc++ (like FreeBSD), there is no libstdc++
 
 
 Version 1.10.3
