@@ -78,7 +78,7 @@ Version 1.20.0
 - fbc: new syntax 'end while' equivalent to 'wend'. wend syntax remains valid (SARG)
 - rtlib: iOS (iPhone, iPad and the iOS Simulator): HOST_IOS when TARGET_OS_IPHONE, the runtime builds with the SDK of iOS without termcap/ncurses and libffi; SHELL returns -1 since iOS has no system()
 - fbc: darwin: #inclib "framework:Name" links with -framework Name (Cocoa, UIKit, ...)
-- gas64: darwin-x86_64 (Mach-O, the assembler of clang): __DATA sections, __mod_init_func/__mod_term_func for the constructors/destructors (Mach-O has no priorities, they run in the order of the modules), .balign, power-of-two alignment of .comm/.lcomm, the underscore prefix of the C functions, no @PLT, the System V ABI (UDT results in registers like linux), 8/16-bit arguments extended to 32 bits (clang's callees expect it), inline asm '[var]' and 'offset sym[rip]' written for clang; '-gen gas64' keeps the intel syntax on darwin
+- gas64: darwin-x86_64 (Mach-O, the assembler of clang): __DATA sections, __mod_init_func/__mod_term_func for the constructors/destructors (Mach-O has no priorities, they run in the order of the modules), .balign, power-of-two alignment of .comm/.lcomm, the underscore prefix of the C functions, no @PLT, the System V ABI (UDT results in registers like linux), 8/16-bit arguments extended to 32 bits (clang's callees expect it), inline asm '[var]' and 'offset sym[rip]' written for clang, extern variables (of dylibs, e.g. __stdoutp of libSystem) accessed through the GOT since Mach-O has no copy relocations; '-gen gas64' keeps the intel syntax on darwin
 
 [fixed]
 - github #410: give consistent floating point comparisons results involving NaNs.

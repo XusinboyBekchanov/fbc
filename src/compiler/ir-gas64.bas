@@ -403,6 +403,8 @@ end type
 
 dim shared as ASM64_REGROOM regroom(KREGUPPER+2)
 dim shared as ASM64_CONTEXT ctx
+'' darwin: the extern variables accessed RIP-relative by the current proc, "|name[" each (see hRipName)
+dim shared as string darwinexterns
 redim shared as tdbgstr  dbgstr()
 redim shared as tdbgstab dbgstab()
 
@@ -1505,6 +1507,119 @@ private sub asm_section(byref section as string)
 		section_current=section
 	end if
 end sub
+
+'' darwin: the mangled name of a variable accessed RIP-relative ("name[rip+ofs]"). An extern variable
+'' can be in a dylib, as __stdoutp of libSystem: Mach-O has no copy relocations and ld rejects
+'' a RIP-relative access to it, so its address is loaded from the GOT at the end of the proc
+'' (hDarwinExternGot)
+private function hRipName( byval sym as FBSYMBOL ptr ) as string
+	dim as string nm = *symbGetMangledName( sym )
+	if ctx.target=FB_COMPTARGET_DARWIN then
+		if symbIsVar( sym ) andalso symbIsExtern( sym ) then
+			if instr( darwinexterns, "|"+nm+"[" )=0 then
+				darwinexterns += "|"+nm+"["
+			end if
+		end if
+	end if
+	function = nm
+end function
+
+private function hIsIdChar( byval c as integer ) as integer
+	function = (c>=asc("a") andalso c<=asc("z")) orelse (c>=asc("A") andalso c<=asc("Z")) orelse _
+		(c>=asc("0") andalso c<=asc("9")) orelse c=asc("_") orelse c=asc("$") orelse c=asc(".")
+end function
+
+'' darwin: one line of asm; when it accesses an extern variable "name[rip+ofs]", its address is
+'' taken from the GOT (ld turns that into a lea when the variable is not in a dylib)
+private function hDarwinExternLine( byref ln as string ) as string
+	dim as integer p0 = 1, p = any, q = 0, e = any, s = any
+	dim as string nm, ofs, got, scr, lnl
+
+	if instr( ln, "[rip+" )=0 then return ln
+	dim as string t = ltrim( ln, any " "+chr(9) )
+	if len( t )=0 orelse t[0]=asc("#") orelse t[0]=asc(".") then return ln
+
+	'' the extern variable of the line
+	do
+		p = instr( p0, darwinexterns, "|" )
+		if p=0 then exit do
+		e = instr( p+1, darwinexterns, "[" )
+		nm = mid( darwinexterns, p+1, e-p-1 )
+		p0 = e+1
+		s = 1
+		do
+			q = instr( s, ln, nm+"[rip+" )
+			if q=0 then exit do
+			if q=1 then exit do
+			if hIsIdChar( ln[q-2] )=false then exit do
+			s = q+1
+		loop
+		if q>0 then exit do
+	loop
+	if q=0 then return ln
+
+	e = instr( q, ln, "]" )
+	ofs = mid( ln, q+len( nm )+5, e-(q+len( nm )+5) )
+	got = "QWORD PTR "+nm+"@GOTPCREL[rip]"
+
+	select case lcase( left( t, instr( t+" ", " " )-1 ) )
+	case "lea"
+		'' lea reg, name[rip+ofs] --> mov reg, GOT / lea reg, ofs[reg]
+		dim as string reg = trim( mid( t, 4, instr( t, "," )-4 ) )
+		if val( ofs )<>0 then
+			return "mov "+reg+", "+got+NEWLINE+"lea "+reg+", "+ofs+"["+reg+"]"
+		end if
+		return "mov "+reg+", "+got
+	case "call", "jmp"
+		'' r11 is no argument register and is free at a call (caller-saved)
+		return "mov r11, "+got+NEWLINE+left( ln, q-1 )+ofs+"[r11]"+mid( ln, e+1 )
+	end select
+
+	'' any other instruction: a scratch register that it does not use, saved around it
+	'' (push, pop, mov and lea keep the flags)
+	static as integer candidates(0 to 8) = { KREG_R11, KREG_R10, KREG_R9, KREG_R8, KREG_R12, KREG_R13, KREG_R14, KREG_R15, KREG_RBX }
+	lnl = lcase( ln )
+	for i as integer = 0 to 8
+		dim as integer r = candidates(i)
+		if instr( lnl, *regstrq(r) )=0 andalso instr( lnl, *regstrd(r) )=0 andalso _
+		   instr( lnl, *regstrw(r) )=0 andalso instr( lnl, *regstrb(r) )=0 then
+			scr = *regstrq(r)
+			exit for
+		end if
+	next
+	if len( scr )=0 then
+		asm_error( "darwin: no free register for the extern variable in "+ln )
+		return ln
+	end if
+
+	if lcase( left( t, 5 ) )="push " then
+		'' push name[rip+ofs] --> the value through the scratch register into a slot made first
+		return "lea rsp, -8[rsp]"+NEWLINE+"push "+scr+NEWLINE+"mov "+scr+", "+got+NEWLINE+ _
+			"mov "+scr+", QWORD PTR "+ofs+"["+scr+"]"+NEWLINE+"mov 8[rsp], "+scr+NEWLINE+"pop "+scr
+	end if
+	if instr( lnl, "rsp" ) then
+		'' a push would move the rsp-relative operand
+		asm_error( "darwin: extern variable and rsp in "+ln )
+		return ln
+	end if
+	return "push "+scr+NEWLINE+"mov "+scr+", "+got+NEWLINE+left( ln, q-1 )+ofs+"["+scr+"]"+mid( ln, e+1 )+NEWLINE+"pop "+scr
+end function
+
+'' darwin: the asm of a proc, with the accesses to the extern variables through the GOT
+private function hDarwinExternGot( byref txt as string ) as string
+	dim as string res
+	dim as integer p = 1, q = any
+	do
+		q = instr( p, txt, NEWLINE )
+		if q=0 then
+			if p<=len( txt ) then res += hDarwinExternLine( mid( txt, p ) )
+			exit do
+		end if
+		res += hDarwinExternLine( mid( txt, p, q-p ) )+NEWLINE
+		p = q+len( NEWLINE )
+	loop
+	function = res
+end function
 
 private sub emitop3_op4(byref op as string)
 	if right(op,3)="#NO" then
@@ -3970,9 +4085,9 @@ private sub prepare_idx(byval v1 as IRVREG ptr, byref op1 as string, byref op3 a
 			regtempo=*reg_tempo()
 			if symbIsStatic(v1->vidx->sym) Or symbisshared(v1->vidx->sym) then
 				if v1->vidx->typ=IR_VREGTYPE_IDX then
-					asm_code("lea "+regtempo+", "+*symbGetMangledName(v1->vidx->sym)+"[rip+"+Str(v1->vidx->ofs)+"]")
+					asm_code("lea "+regtempo+", "+hRipName(v1->vidx->sym)+"[rip+"+Str(v1->vidx->ofs)+"]")
 				elseif v1->vidx->typ=IR_VREGTYPE_VAR then
-					asm_code("mov "+regtempo+", "+*symbGetMangledName(v1->vidx->sym)+"[rip+"+Str(v1->vidx->ofs)+"]")
+					asm_code("mov "+regtempo+", "+hRipName(v1->vidx->sym)+"[rip+"+Str(v1->vidx->ofs)+"]")
 				else
 					asm_error("prepare_IDX case v1->vidx->typ not handled 00")
 				end if
@@ -3996,7 +4111,7 @@ private sub prepare_idx(byval v1 as IRVREG ptr, byref op1 as string, byref op3 a
 		elseif symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
 			dim as string regtempo2
 			regtempo2=*reg_tempo()
-			asm_code("lea "+regtempo2+", "+*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]")
+			asm_code("lea "+regtempo2+", "+hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]")
 			asm_code("lea "+regtempo2+", "+"["+regtempo2+"+"+regtempo+"]")
 			op1="["+regtempo2+"]"
 		else
@@ -4026,7 +4141,7 @@ private sub prepare_idx(byval v1 as IRVREG ptr, byref op1 as string, byref op3 a
 			''with vidx=<var varname ofs
 			regtempo=*reg_tempo()
 			if symbIsStatic(v1->vidx->sym) Or symbisshared(v1->vidx->sym) then
-				asm_code("lea "+regtempo+", "+*symbGetMangledName(v1->vidx->sym)+"[rip+"+Str(v1->vidx->ofs)+"]")
+				asm_code("lea "+regtempo+", "+hRipName(v1->vidx->sym)+"[rip+"+Str(v1->vidx->ofs)+"]")
 				asm_code("mov "+regtempo+", "+"["+regtempo+"]") ' #NO"
 				op1=Str(v1->ofs)+"["+regtempo+"]"
 				return
@@ -4041,7 +4156,7 @@ private sub prepare_idx(byval v1 as IRVREG ptr, byref op1 as string, byref op3 a
 		''format  varname ofs1= [dt] vidx=<reg>  /// vidx=<var varname ofs
 		regtempo=*reg_tempo()
 		if symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
-			asm_code("lea "+regtempo+", "+*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]")' #NO"
+			asm_code("lea "+regtempo+", "+hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]")' #NO"
 		else
 			asm_code("lea "+regtempo+", "+Str(v1->ofs)+"[rbp]")
 		end if
@@ -4050,7 +4165,7 @@ private sub prepare_idx(byval v1 as IRVREG ptr, byref op1 as string, byref op3 a
 			return
 		elseif v1->vidx->typ=IR_VREGTYPE_VAR then
 			if symbIsStatic(v1->vidx->sym) Or symbisshared(v1->vidx->sym) then
-				asm_code("add "+regtempo+", "+*symbGetMangledName(v1->vidx->sym)+"[rip+"+Str(v1->vidx->ofs)+"]")
+				asm_code("add "+regtempo+", "+hRipName(v1->vidx->sym)+"[rip+"+Str(v1->vidx->ofs)+"]")
 			else
 				asm_code("add "+regtempo+","+Str(v1->vidx->ofs)+"[rbp]")
 			end if
@@ -4478,7 +4593,7 @@ private sub hloadoperandsandwritebop(byval op as integer,byval v1 as IRVREG ptr,
 			op1=Str(v1->ofs)+"["+*regstrq(reg_findreal(v1->vidx->reg))+"]"
 
 		case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero
-			op1=*symbGetMangledName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
+			op1=hRipName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
 
 		case IR_VREGTYPE_IMM         ''rare case
 			if ( typeGetClass( v1->dtype ) = FB_DATACLASS_FPOINT)  then
@@ -4502,7 +4617,7 @@ private sub hloadoperandsandwritebop(byval op as integer,byval v1 as IRVREG ptr,
 				op1="["+regtempo+"]"
 			else
 				if symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
-					op1=*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
+					op1=hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
 				else
 					op1=Str(v1->ofs)+"[rbp]"
 				end if
@@ -4547,7 +4662,7 @@ private sub hloadoperandsandwritebop(byval op as integer,byval v1 as IRVREG ptr,
 			op2=Str(v2->ofs)+"["+*regstrq(reg_findreal(v2->vidx->reg))+"]"
 
 		case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero
-			op2=*symbGetMangledName(v2->sym)+"[rip+"+str(v2->ofs)+"]"
+			op2=hRipName(v2->sym)+"[rip+"+str(v2->ofs)+"]"
 
 		case IR_VREGTYPE_IDX
 			prepare_idx(v2,op2,op4)
@@ -4564,7 +4679,7 @@ private sub hloadoperandsandwritebop(byval op as integer,byval v1 as IRVREG ptr,
 			else
 
 				if symbIsStatic(v2->sym) Or symbisshared(v2->sym) then
-					op2=*symbGetMangledName(v2->sym)+"[rip+"+Str(v2->ofs)+"]"
+					op2=hRipName(v2->sym)+"[rip+"+Str(v2->ofs)+"]"
 				else
 					op2=Str(v2->ofs)+"[rbp]"
 				end if
@@ -5180,13 +5295,13 @@ private sub _emituop(byval op as integer,byval v1 as IRVREG ptr,byval vr as IRVR
 			op1=Str(v1->ofs)+"["+*regstrq(reg_findreal(v1->vidx->reg))+"]"
 
 		case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero
-			op1=*symbGetMangledName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
+			op1=hRipName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
 
 		case IR_VREGTYPE_IMM
 
 		case IR_VREGTYPE_VAR ''format varname ofs1   local/static  ofs1 could be zero
 			if symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
-				op1=*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
+				op1=hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
 			else
 				op1=Str(v1->ofs)+"[rbp]"
 			end if
@@ -5605,7 +5720,7 @@ private sub _emitconvert( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 				if ctx.systemv=true andalso fbGetOption( FB_COMPOPT_OUTTYPE ) = FB_OUTTYPE_DYNAMICLIB then
 					op2=*symbGetMangledName(v2->sym)+"@GOTPCREL[rip]" '[rip+"+Str(v2->ofs)+"]"
 				else
-					op2=*symbGetMangledName(v2->sym)+"[rip+"+Str(v2->ofs)+"]"
+					op2=hRipName(v2->sym)+"[rip+"+Str(v2->ofs)+"]"
 				end if
 			else
 				op2=Str(v2->ofs)+"[rbp]"
@@ -5615,7 +5730,7 @@ private sub _emitconvert( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 			op2=Str(v2->ofs)+"["+*regstrq(reg_findreal(v2->vidx->reg))+"]"
 
 		case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero
-			op2=*symbGetMangledName(v2->sym)+"[rip+"+str(v2->ofs)+"]"
+			op2=hRipName(v2->sym)+"[rip+"+str(v2->ofs)+"]"
 			if typeGetDtOnly( v2->dtype )=FB_DATATYPE_FUNCTION andalso ctx.systemv=true andalso fbGetOption( FB_COMPOPT_OUTTYPE ) = FB_OUTTYPE_DYNAMICLIB then
 				asm_code("mov rax, QWORD PTR "+left(op2,instr(op2,"[")-1)+"@GOTPCREL[rip]")
 				asm_code("mov "+op1+", rax",KNOOPTIM)
@@ -6139,7 +6254,7 @@ private sub _emitstore( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 
 		case IR_VREGTYPE_VAR ''format varname ofs1   local/static  ofs1 could be zero
 			if symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
-				op1=*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
+				op1=hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
 			else
 				op1=Str(v1->ofs)+"[rbp]"
 			end if
@@ -6161,7 +6276,7 @@ private sub _emitstore( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 				op1="["+*regstrq(reg_findreal(v1->vidx->reg))+"]"
 			end if
 		case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero
-			op1=*symbGetMangledName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
+			op1=hRipName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
 
 		case else
 			asm_error("store 01")
@@ -6203,7 +6318,7 @@ private sub _emitstore( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 
 		case IR_VREGTYPE_VAR ''format varname ofs1   local/static  ofs1 could be zero
 			if v2->sym<>0 andalso ( symbIsStatic(v2->sym) Or symbisshared(v2->sym) ) then
-				op2=*symbGetMangledName(v2->sym)+"[rip+"+Str(v2->ofs)+"]"
+				op2=hRipName(v2->sym)+"[rip+"+Str(v2->ofs)+"]"
 			else
 				op2=Str(v2->ofs)+"[rbp]"
 			end if
@@ -6216,7 +6331,7 @@ private sub _emitstore( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 				op2="["+str(v2->ofs)+"]"
 			end if
 		case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero
-			op2=*symbGetMangledName(v2->sym)+"[rip+"+str(v2->ofs)+"]" ''used with lea
+			op2=hRipName(v2->sym)+"[rip+"+str(v2->ofs)+"]" ''used with lea
 
 		case IR_VREGTYPE_IMM
 			if v1->dtype=FB_DATATYPE_BOOLEAN and v2->value.i<>0 then
@@ -6424,7 +6539,7 @@ private sub _emitloadres(byval v1 as IRVREG ptr,byval vr as IRVREG Ptr)
 
 		case IR_VREGTYPE_VAR ''format varname ofs1   local/static  ofs1 could be zero
 			if symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
-				op1=*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
+				op1=hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
 			else
 				op1=Str(v1->ofs)+"[rbp]"
 			end if
@@ -6433,7 +6548,7 @@ private sub _emitloadres(byval v1 as IRVREG ptr,byval vr as IRVREG Ptr)
 			op1=Str(v1->ofs)+"["+*regstrq(reg_findreal(v1->vidx->reg))+"]"
 
 			'case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero  ''kept as could be used
-			'op1=*symbGetMangledName(v1->sym)+"[rip+"+str(v1->ofs)+"]"    ''never happens
+			'op1=hRipName(v1->sym)+"[rip+"+str(v1->ofs)+"]"    ''never happens
 			asm_error("in loadres OFS not handled")
 
 		case IR_VREGTYPE_REG
@@ -6560,7 +6675,7 @@ private sub _emitaddr(byval op as integer,byval v1 as IRVREG ptr,byval vr as IRV
 
 				case IR_VREGTYPE_VAR ''format varname ofs1   local/static  ofs1 could be zero
 					if symbIsStatic(v1->sym) Or symbisshared(v1->sym) or symbIsLabel(v1->sym) then
-						op1=*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
+						op1=hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
 					else
 						op1=Str(v1->ofs)+"[rbp]"
 					end if
@@ -6569,7 +6684,7 @@ private sub _emitaddr(byval op as integer,byval v1 as IRVREG ptr,byval vr as IRV
 					op1=Str(v1->ofs)+"["+*regstrq(reg_findreal(v1->vidx->reg))+"]"
 
 				case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero  ''kept as could be used
-					op1=*symbGetMangledName(v1->sym)+"[rip+"+str(v1->ofs)+"]"    ''never happens
+					op1=hRipName(v1->sym)+"[rip+"+str(v1->ofs)+"]"    ''never happens
 					asm_error("in emitaddr OFS not handled")
 
 				case else
@@ -6594,7 +6709,7 @@ private sub _emitaddr(byval op as integer,byval v1 as IRVREG ptr,byval vr as IRV
 							asm_code("mov rax, "+*symbGetMangledName(v1->sym)+"@GOTPCREL[rip]")
 							op1="[rax]"
 						else
-							op1=*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
+							op1=hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
 						end if
 					else
 						op1=Str(v1->ofs)+"[rbp]"
@@ -6604,7 +6719,7 @@ private sub _emitaddr(byval op as integer,byval v1 as IRVREG ptr,byval vr as IRV
 					op1=Str(v1->ofs)+"["+*regstrq(reg_findreal(v1->vidx->reg))+"]"
 
 				case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero
-					op1=*symbGetMangledName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
+					op1=hRipName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
 
 				case IR_VREGTYPE_REG
 					op1="["+*regstrq(reg_findreal(v1->reg))+"]"
@@ -6710,7 +6825,7 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 
 			case IR_VREGTYPE_VAR ''format varname ofs1   local/static  ofs1 could be zero
 				if v2->sym<>0 andalso (symbIsStatic(v2->sym) Or symbisshared(v2->sym) ) then ''for gas64
-					op1=*symbGetMangledName(v2->sym)+"[rip+"+Str(v2->ofs)+"]"
+					op1=hRipName(v2->sym)+"[rip+"+Str(v2->ofs)+"]"
 				else
 					op1=Str(v2->ofs)+"[rbp]"
 				end if
@@ -6720,7 +6835,7 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 				op1=Str(v2->ofs)+"["+*regstrq(reg2)+"]"
 
 			case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero
-				op1=*symbGetMangledName(v2->sym)+"[rip+"+str(v2->ofs)+"]"
+				op1=hRipName(v2->sym)+"[rip+"+str(v2->ofs)+"]"
 
 			case IR_VREGTYPE_IMM
 				if typeGetClass( dtype ) = FB_DATACLASS_FPOINT then
@@ -7366,7 +7481,7 @@ private sub _emitcallptr _
 			asm_error("Never IMM as first operand")
 		case IR_VREGTYPE_VAR ''format varname ofs1   local/static  ofs1 could be zero
 			if symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
-				op1=*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
+				op1=hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
 			else
 				op1=Str(v1->ofs)+"[rbp]"
 			end if
@@ -7495,13 +7610,13 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 				srctyp=KUSE_LEA ''doesn't mean something just to be different from VAR case
 			elseif v1->typ=IR_VREGTYPE_VAR then
 				if symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
-					op1=*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
+					op1=hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
 				else
 					op1=Str(v1->ofs)+"[rbp]"
 				end if
 				srctyp=KUSE_MOV
 			elseif v1->typ=IR_VREGTYPE_OFS then  ''format varname ofs1   static  ofs1 could be zero
-				op1=*symbGetMangledName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
+				op1=hRipName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
 				srctyp=KUSE_LEA
 				instruc="lea "
 			else
@@ -7552,7 +7667,7 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 						End If
 					else
 						if symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
-							asm_code("mov rdx, "+*symbGetMangledName(v2->sym)+"[rip+"+Str(v2->ofs)+"]",KNOALL)
+							asm_code("mov rdx, "+hRipName(v2->sym)+"[rip+"+Str(v2->ofs)+"]",KNOALL)
 						else
 							asm_code("mov rdx, "+Str(v2->ofs)+"[rbp]",KNOALL)
 						end if
@@ -7593,7 +7708,7 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 						End If
 					else
 						if symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
-							asm_code("mov r8, "+*symbGetMangledName(v2->sym)+"[rip+"+Str(v2->ofs)+"]",KNOALL)
+							asm_code("mov r8, "+hRipName(v2->sym)+"[rip+"+Str(v2->ofs)+"]",KNOALL)
 						else
 							asm_code("mov r8, "+Str(v2->ofs)+"[rbp]",KNOALL)
 						end if
@@ -7689,7 +7804,7 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 
 				case IR_VREGTYPE_VAR ''format varname ofs1   local/static  ofs1 could be zero
 					if symbIsStatic(v1->sym) Or symbisshared(v1->sym) then
-						op1=*symbGetMangledName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
+						op1=hRipName(v1->sym)+"[rip+"+Str(v1->ofs)+"]"
 					else
 						op1=Str(v1->ofs)+"[rbp]"
 					end if
@@ -7698,7 +7813,7 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 					op1=Str(v1->ofs)+"["+*regstrq(reg_findreal(v1->vidx->reg))+"]"
 
 				case IR_VREGTYPE_OFS ''format varname ofs1   static  ofs1 could be zero
-					op1=*symbGetMangledName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
+					op1=hRipName(v1->sym)+"[rip+"+str(v1->ofs)+"]"
 					desttyp=KUSE_LEA
 					asm_info("copy use LEA")
 
@@ -7714,13 +7829,13 @@ private sub _emitmem(byval op as integer,byval v1 as IRVREG ptr,byval v2 as IRVR
 					op2=*regstrq(regsrc)
 				case IR_VREGTYPE_VAR
 					if symbIsStatic(v2->sym) Or symbisshared(v2->sym) then
-						op2=*symbGetMangledName(v2->sym)+"[rip+"+Str(v2->ofs)+"]"
+						op2=hRipName(v2->sym)+"[rip+"+Str(v2->ofs)+"]"
 					else
 						op2=Str(v2->ofs)+"[rbp]"
 					end if
 					'srctyp=KUSE_LEA ''used with memcopy
 				case IR_VREGTYPE_OFS
-					op2=*symbGetMangledName(v2->sym)+"[rip+"+str(v2->ofs)+"]"
+					op2=hRipName(v2->sym)+"[rip+"+str(v2->ofs)+"]"
 					srctyp=KUSE_LEA
 				case IR_VREGTYPE_PTR ''format ofs1 <vidx=reg>
 					op2=Str(v2->ofs)+"["+*regstrq(reg_findreal(v2->vidx->reg))+"]"
@@ -8107,7 +8222,13 @@ private sub _emitprocend _
 
 	irhlEmitProcEnd( ) ''just flistReset( @irhl.vregs )
 
-	ctx.body_txt+=ctx.prolog_txt+ctx.proc_txt+ctx.epilog_txt ''assembling all the parts
+	if ctx.target=FB_COMPTARGET_DARWIN andalso len( darwinexterns ) then
+		'' darwin: the extern variables through the GOT (see hRipName)
+		ctx.body_txt+=hDarwinExternGot( ctx.prolog_txt+ctx.proc_txt+ctx.epilog_txt )
+		darwinexterns=""
+	else
+		ctx.body_txt+=ctx.prolog_txt+ctx.proc_txt+ctx.epilog_txt ''assembling all the parts
+	end if
 	ctx.section=SECTION_HEAD ''to keep information that could be send after as ctx.epilog_txt will be erased
 
 end sub
