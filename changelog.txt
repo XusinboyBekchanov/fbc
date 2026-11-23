@@ -121,6 +121,10 @@ Version 1.20.0
 - gas64: SysV: storing a UDT returned in 2 registers into an array element, through a pointer or with -exx lost or corrupted fields, and fbc crashed on '*p = f()' (SARG)
 - gas64: SysV: UDTs of 14 bytes returned in 2 registers failed to link with "undefined reference to `rax8'"
 - gas64: fixes for profiling (-profile), byval UDTs copied on the stack, '-NNN[rbp] + 8' operands and MPUSH array size (SARG)
+- gas64: -0.0 passed as a SINGLE/DOUBLE constant argument lost its sign (SARG)
+- gas64: win64: a floating point constant passed to a variadic procedure (e.g. printf("%g", 1.5)) was not copied to the integer register, the callee read garbage (SARG)
+- gas64: SysV: a negative SINGLE constant passed on the stack (e.g. the 9th float argument) failed to assemble with "operand size mismatch for `push'"
+- gas64: fixes for registers not freed after 'jmp' and 'ucomiss'/'ucomisd', SELECT CASE AS CONST jump tables, CVA_LIST parameters on linux and UDTs returned in 2 registers stored to temporary variables (SARG)
 
 
 Version 1.10.3

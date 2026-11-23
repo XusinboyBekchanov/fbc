@@ -24,6 +24,25 @@ SUITE( fbc_tests.crt.varargs )
 
 	END_TEST
 
+	TEST( call_snprintf_float )
+
+		'' win64: a float constant passed to a variadic procedure must also be
+		'' in the integer register (r8/r9 here), the callee reads it from there
+		const BUFFER_SIZE = 128
+		dim as zstring * BUFFER_SIZE z
+		snprintf( @z, BUFFER_SIZE, "%g %g", 1.5, 2.25 )
+		CU_ASSERT( z = "1.5 2.25" )
+
+		dim as double d1 = 3.5, d2 = -0.75
+		snprintf( @z, BUFFER_SIZE, "%g %g", d1, d2 )
+		CU_ASSERT( z = "3.5 -0.75" )
+
+		dim as long i = 7
+		snprintf( @z, BUFFER_SIZE, "%g %i %g", 0.5, i, d1 )
+		CU_ASSERT( z = "0.5 7 3.5" )
+
+	END_TEST
+
 	sub call_vsprintf_proc cdecl( byval z as zstring ptr, fmt as zstring ptr, ... )
 		dim as cva_list args = any
 		cva_start( args, fmt )
