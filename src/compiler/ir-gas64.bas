@@ -6749,7 +6749,15 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 					asm_info("typeclass="+str(typeGetClass( dtype ))+" "+str(FB_DATACLASS_FPOINT))
 					if typeGetClass( dtype ) = FB_DATACLASS_FPOINT then
 						if dtype=FB_DATATYPE_SINGLE then
-							MPUSH("push "+op1)
+							''push imm32 is sign-extended so for handling negative values including -0.0 case
+							''the value is moved in eax then pushed (MPUSH lines are written in reverse order)
+							dim as single temposng = v2->value.f
+							if (*cptr(ulong ptr,@temposng) and &h80000000)=0 then
+								MPUSH("push "+op1)
+							else
+								MPUSH("push rax")
+								MPUSH("mov eax, "+op1)
+							end if
 						else
 							MPUSH("push rax")
 							MPUSH("mov rax, "+op1)
