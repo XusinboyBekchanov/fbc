@@ -31,6 +31,7 @@ Version 1.20.0
 - __FB_QUERY_SYMBOL__( fbc.FB_QUERY_SYMBOL.mangletype, symbol ) returns the mangled type name of symbol
 - headers: portaudio version 19.7.0 - based on pa_stable_v190700_20210406
 - gas64: improve performance of gas64 back-end (SARG)
+- gas64: optimization: variadic calls with float arguments (SARG)
 - gas64: optimizations: zero assignment of floats in procedure calls, stack alignment on linux, faster compilation in hdocall, comments moved to asm_info (SARG)
 
 [added]
@@ -128,6 +129,7 @@ Version 1.20.0
 - gas64: fixes for registers not freed after 'jmp' and 'ucomiss'/'ucomisd', SELECT CASE AS CONST jump tables, CVA_LIST parameters on linux and UDTs returned in 2 registers stored to temporary variables (SARG)
 - gas64: writing through a pointer with an offset to a shared variable, e.g. '*(cast(integer ptr, varptr(g.s)) + 1) = 0', failed to assemble (peephole optimization #04) (SARG)
 - gas64: fixes in memfill/memset and a duplicated line in memfill (SARG)
+- gas64: fixes for the stack alignment of local variables and parameters, the float count in al for variadic calls on linux and a register leak in variadic calls on linux (SARG)
 
 
 Version 1.10.3
