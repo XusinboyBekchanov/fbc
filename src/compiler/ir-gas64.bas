@@ -2922,8 +2922,10 @@ private sub memcopy(byval bytestocopy as Integer,byref src as string, byref dst 
 	end if
 
 	if nbbytes>7 then
-		asm_code("mov rax, ["+regsrc+"]")
-		asm_code("mov ["+regdst+"], rax")
+		''when bytes follow, regsrc/regdst are used again so no optimization 7/4 (lea + [reg])
+		dim as integer optnext = iif(nbbytes>8, KNOOPTIM, KDOALL)
+		asm_code("mov rax, ["+regsrc+"]", optnext)
+		asm_code("mov ["+regdst+"], rax", optnext)
 		nbbytes-=8
 		if nbbytes<>0 then ''otherwise not usefull
 			asm_code("add "+regsrc+", 8",KNOOPTIM)
