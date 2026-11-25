@@ -1,5 +1,25 @@
 # include "fbcunit.bi"
 
+'' a comment after a macro call without parentheses must not swallow the
+'' next line (this was wrong at module level only, so the calls are here)
+
+# macro addTo ? ( s, x )
+	s &= x
+# endmacro
+
+# macro addTo2 ? ( s, x, y )
+	s &= x & y
+# endmacro
+
+dim shared as string macro_comment_result
+
+addTo macro_comment_result, "a" 'comment
+addTo macro_comment_result, "b"
+addTo2 macro_comment_result, "c", "d" 'comment
+addTo2 macro_comment_result, "e", "f"
+addTo macro_comment_result, "g" rem comment
+addTo macro_comment_result, "h"
+
 SUITE( fbc_tests.pp.macro_no_parentheses )
 
 	TEST( initializer )
@@ -86,6 +106,12 @@ SUITE( fbc_tests.pp.macro_no_parentheses )
 
 		s = foo bar 1, 2, 3, baz 4, 5, 6
 		CU_ASSERT_EQUAL( s, c )
+
+	END_TEST
+
+	TEST( commentAfterCall )
+
+		CU_ASSERT_EQUAL( macro_comment_result, "abcdefgh" )
 
 	END_TEST
 
