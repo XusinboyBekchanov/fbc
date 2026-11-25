@@ -131,6 +131,7 @@ Version 1.20.0
 - gas64: writing through a pointer with an offset to a shared variable, e.g. '*(cast(integer ptr, varptr(g.s)) + 1) = 0', failed to assemble (peephole optimization #04) (SARG)
 - gas64: fixes in memfill/memset and a duplicated line in memfill (SARG)
 - gas64: fixes for the stack alignment of local variables and parameters, the float count in al for variadic calls on linux and a register leak in variadic calls on linux (SARG)
+- gas64: a copy of more than 8 bytes (e.g. returning a 15-byte UDT) lost its source address after the first 8 bytes
 
 
 Version 1.10.3
