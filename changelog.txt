@@ -31,6 +31,8 @@ Version 1.20.0
 - __FB_QUERY_SYMBOL__( fbc.FB_QUERY_SYMBOL.mangletype, symbol ) returns the mangled type name of symbol
 - headers: portaudio version 19.7.0 - based on pa_stable_v190700_20210406
 - gas64: improve performance of gas64 back-end (SARG)
+- fbc: procedures named like an asm keyword or register (e.g. 'sub rax') are allowed, a '$' suffix is added to the name; a warning is still given if they are ALIASed or EXPORTed (SARG)
+- fbc: variables named like an asm keyword or register are allowed, except EXTERN ones (warning) (SARG)
 
 [added]
 - x86_64: optimize SHL MOD INTDIV to use 32-bit operation when result will be converted to long/ulong
