@@ -343,10 +343,12 @@ private function hParamDecl _
 	if( lexGetToken( ) = CHAR_LPRNT ) then
 		lexSkipToken( )
 
-		'' BYVAL/BYREF cannot be used; array() parameters always
-		'' implicitly are BYDESC
+		'' BYVAL cannot be used; array() parameters always
+		'' implicitly are BYDESC.
 		if( mode <> INVALID ) then
-			hParamError( proc, id )
+			if mode = FB_PARAMMODE_BYVAL then
+				hParamError( proc, id, FB_ERRMSG_BYVALARRAYNOTALLOWED)
+			end if
 		end if
 		mode = FB_PARAMMODE_BYDESC
 
