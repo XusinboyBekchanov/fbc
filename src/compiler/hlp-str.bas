@@ -726,7 +726,12 @@ function hReEscape _
 					dst[7] = hHexChar( value )
 					dst += 8
 
-					textlen += 1
+					'' a surrogate pair if wstring is 16-bit
+					if( typeGetSize( FB_DATATYPE_WCHAR ) = 2 ) then
+						textlen += 2
+					else
+						textlen += 1
+					end if
 
 				else
 
@@ -1006,7 +1011,12 @@ function hReEscapeW _
 					dst[7] = hHexChar( value )
 					dst += 8
 
-					textlen += 1
+					'' a surrogate pair if wstring is 16-bit
+					if( typeGetSize( FB_DATATYPE_WCHAR ) = 2 ) then
+						textlen += 2
+					else
+						textlen += 1
+					end if
 
 				else
 
