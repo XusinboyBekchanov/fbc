@@ -134,6 +134,7 @@ Version 1.20.0
 - gas64: a copy of more than 8 bytes (e.g. returning a 15-byte UDT) lost its source address after the first 8 bytes
 - gas64: a SINGLE/DOUBLE value converted to BOOLEAN was rounded to an integer first, so values like 0.3 became FALSE (SARG)
 - gas64: fixes in reg_freeable: decision block reviewed, [rxx+ryy] cases completed (SARG)
+- gas64: SysV: a UDT of 1 to 7 bytes returned by a function and stored into an array element or through a pointer overwrote the following bytes (SARG)
 
 
 Version 1.10.3
