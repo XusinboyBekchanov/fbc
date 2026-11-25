@@ -31,6 +31,7 @@ Version 1.20.0
 - __FB_QUERY_SYMBOL__( fbc.FB_QUERY_SYMBOL.mangletype, symbol ) returns the mangled type name of symbol
 - headers: portaudio version 19.7.0 - based on pa_stable_v190700_20210406
 - gas64: improve performance of gas64 back-end (SARG)
+- fbc: a BYREF AS ANY parameter of a declaration still accepts any type in calls placed after the procedure body, which declares a typed parameter (SARG)
 
 [added]
 - x86_64: optimize SHL MOD INTDIV to use 32-bit operation when result will be converted to long/ulong
