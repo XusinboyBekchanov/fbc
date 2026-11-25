@@ -388,4 +388,29 @@ SUITE( fbc_tests.boolean_.boolean_conversions )
 
 	END_TEST
 
+	TEST( smallFloatToBool )
+
+		'' a float that is not zero is TRUE, also when it rounds to 0
+		'' (gas64 rounded to an integer first, so 0.3 became FALSE)
+
+		dim f as single
+		dim d as double
+		dim bool as boolean
+
+		f = 0.3     : bool = f : CU_ASSERT( bool = cbool(TRUE) )
+		f = -0.3    : bool = f : CU_ASSERT( bool = cbool(TRUE) )
+		f = 1e-30   : bool = f : CU_ASSERT( bool = cbool(TRUE) )
+		f = 0       : bool = f : CU_ASSERT( bool = cbool(FALSE) )
+		f = -0.0    : bool = f : CU_ASSERT( bool = cbool(FALSE) )
+		CU_ASSERT( cbool( f + 0.25 ) = cbool(TRUE) )
+
+		d = 0.3     : bool = d : CU_ASSERT( bool = cbool(TRUE) )
+		d = -0.3    : bool = d : CU_ASSERT( bool = cbool(TRUE) )
+		d = 1e-300  : bool = d : CU_ASSERT( bool = cbool(TRUE) )
+		d = 0       : bool = d : CU_ASSERT( bool = cbool(FALSE) )
+		d = -0.0    : bool = d : CU_ASSERT( bool = cbool(FALSE) )
+		CU_ASSERT( cbool( d + 0.25 ) = cbool(TRUE) )
+
+	END_TEST
+
 END_SUITE
