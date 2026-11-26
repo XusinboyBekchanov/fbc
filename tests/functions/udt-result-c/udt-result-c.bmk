@@ -1,0 +1,9 @@
+# TEST_MODE : MULTI_MODULE_OK
+
+MAIN := udt-result-c.bas
+SRCS := 
+
+EXTRA_OBJS := udt-result-c-mod.o
+
+$(SRCDIR)udt-result-c-mod.o : $(SRCDIR)udt-result-c-mod.c
+	$(CC) -c $(CFLAGS) -o $@ $^
