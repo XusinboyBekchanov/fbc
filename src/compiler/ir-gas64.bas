@@ -6211,6 +6211,34 @@ private sub emitStoreStruct(byval v2 as IRVREG ptr,byref op1 as string,byref op3
 
 	asm_code("lea rax, "+op1)
 	asm_code("push rdx")  ''not sure useful, same for pop
+	if lgtv<8 then
+		''structure of 3, 5, 6 or 7 bytes returned in RAX, only its bytes are written
+		asm_code("mov rdx,"+str(v2->ofs)+"[rbp]")
+		select case as const lgtv
+			case 3
+				asm_code("mov [rax], dx")
+				asm_code("shr rdx, 16")
+				asm_code("mov [rax+2], dl")
+			case 5
+				asm_code("mov [rax], edx")
+				asm_code("shr rdx, 32")
+				asm_code("mov [rax+4], dl")
+			case 6
+				asm_code("mov [rax], edx")
+				asm_code("shr rdx, 32")
+				asm_code("mov [rax+4], dx")
+			case 7
+				asm_code("mov [rax], edx")
+				asm_code("shr rdx, 32")
+				asm_code("mov [rax+4], dx")
+				asm_code("shr rdx, 16")
+				asm_code("mov [rax+6], dl")
+			case else
+				asm_error("emitStoreStruct : unexpected structure size "+str(lgtv))
+		end select
+		asm_code("pop rdx")
+		exit sub
+	end if
 	''moving 8 first bytes
 	asm_code("mov rdx,"+str(v2->ofs)+"[rbp]")
 	asm_code("mov [rax], rdx")
@@ -6346,6 +6374,9 @@ private sub _emitstore( byval v1 as IRVREG ptr, byval v2 as IRVREG ptr )
 
 	if( hIsStructIn2Regs( v2 ) ) then
 		'' for Linux structures can be returned in 2 registers so needs a special handling
+		emitStoreStruct(v2,op1,op3)
+		exit sub
+	elseif typeGetDtAndPtrOnly(v2->dtype)=FB_DATATYPE_STRUCT then
 		emitStoreStruct(v2,op1,op3)
 		exit sub
 	end if
@@ -6694,6 +6725,9 @@ private sub _emitloadres(byval v1 as IRVREG ptr,byval vr as IRVREG Ptr)
 				asm_code("movzx "+*regstrq(KREG_RAX)+", WORD PTR "+op1)
 			case FB_DATATYPE_BYTE,FB_DATATYPE_UBYTE,FB_DATATYPE_BOOLEAN,FB_DATATYPE_CHAR
 				asm_code("movzx "+*regstrq(KREG_RAX)+", BYTE PTR "+op1)
+			case FB_DATATYPE_STRUCT
+				''for linux case lenght 3,5,6,7
+				asm_code("mov rax, "+op1)
 			case else
 				asm_error("in loadres datatype not handled ="+typedumpToStr(v1->dtype,0))
 		end select
@@ -7516,6 +7550,13 @@ private sub hdocall(byval proc as FBSYMBOL ptr,byref pname as string,byref first
 					case FB_DATATYPE_BYTE,FB_DATATYPE_UBYTE,FB_DATATYPE_BOOLEAN,FB_DATATYPE_CHAR
 						op1=*regstrb(reg_findreal(vr->reg))
 						asm_code("mov "+op1+", "+*regstrb(KREG_RAX))
+					case FB_DATATYPE_STRUCT
+						''Structure returned in rax only linux 3 5 6 7
+						vr->typ=IR_VREGTYPE_VAR ''for use when argument
+						ctx.stk+=typeGetSize( FB_DATATYPE_LONGINT ) ''reserving 8 bytes
+						vr->ofs=-ctx.stk
+						asm_info("new vr="+vregdumpfull(vr))
+						asm_code("mov "+str(vr->ofs)+  "[rbp], rax")
 					case else
 						asm_error("in hdocall datatype not handled 04 ="+typedumpToStr(dtype,0))
 						op1=*regstrq(KREG_XXX)

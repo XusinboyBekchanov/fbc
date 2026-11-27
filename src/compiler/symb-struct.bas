@@ -737,13 +737,22 @@ private function hGetReturnTypeGas64SystemV( byval sym as FBSYMBOL ptr ) as inte
 	if( sym->lgt <= typeGetSize( FB_DATATYPE_LONGINT ) * 2 ) then
 		select case as const hGetMagicStructNumber( sym )
 			case KSTRUCT_R ''only integers in RAX
-				'' don't set retin2regs, it's handled by datatype only
-				'' sym->udt.retin2regs = FB_STRUCT_R
-				if sym->lgt>4 then
-					return FB_DATATYPE_LONGINT
-				else
-					return FB_DATATYPE_LONG
-				endif
+				'' sizes 1, 2, 4 and 8 are handled by datatype only, the other sizes
+				'' (3, 5, 6, 7) are stored from RAX like the structures in 2 registers
+				'' so only the bytes of the structure are written
+				select case as const sym->lgt
+					case 8
+						return FB_DATATYPE_LONGINT
+					case 4
+						return FB_DATATYPE_LONG
+					case 2
+						return FB_DATATYPE_SHORT
+					case 1
+						return FB_DATATYPE_BYTE
+					case else
+						'' 3, 5, 6, 7: no register dtype fits exactly
+						return FB_DATATYPE_STRUCT
+				end select
 			case KSTRUCT_X ''only floats in XMM0
 				'' don't set retin2regs, it's handled by datatype only
 				'' sym->udt.retin2regs = FB_STRUCT_X
